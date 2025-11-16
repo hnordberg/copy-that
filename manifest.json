@@ -5,7 +5,7 @@
   "description": "Click an element on the page to copy its innerText (Manifest V2 version).",
   "applications": {
       "gecko": {
-          "id": "<your email address>"
+          "id": "someone@example.com"
       }
   },
   "permissions": [
