@@ -56,7 +56,7 @@ This extension is designed for Chrome and other Chromium-based browsers that sup
 
 ## License
 
-This project is open source and available for use.
+MIT License
 
 ## Author
 
