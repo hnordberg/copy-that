@@ -3,15 +3,15 @@
   "name": "Copy That (V2)",
   "version": "1.0",
   "description": "Click an element on the page to copy its innerText (Manifest V2 version).",
-  "applications": {
-      "gecko": {
-          "id": "someone@example.com"
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "someone@example.com",
+      "data_collection_permissions": {
+        "required": ["none"]
       }
+    }
   },
-  "permissions": [
-    "activeTab",
-    "clipboardWrite"
-  ],
+  "permissions": ["activeTab", "clipboardWrite"],
   "background": {
     "scripts": ["background.js"],
     "persistent": false
