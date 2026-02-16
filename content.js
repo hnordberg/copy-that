@@ -1,11 +1,11 @@
 (() => {
     // Prevent running multiple instances if injected multiple times accidentally
     if (window.elementTextCopierActive) {
-      console.log("Copy That (V2) is already active. Click an element or press Esc.");
+      console.log("Copy That is already active. Click an element or press Esc.");
       return;
     }
     window.elementTextCopierActive = true;
-    console.log("Copy That (V2) activated. Hover and click an element.");
+    console.log("Copy That activated. Hover and click an element.");
   
     let lastHighlightedElement = null;
     const highlightStyle = 'outline: 2px solid red; cursor: pointer;';
@@ -130,7 +130,7 @@
       document.removeEventListener('keydown', handleKeyDown, true); // Use capture phase
   
       window.elementTextCopierActive = false; // Mark as inactive
-      console.log("Copy That (V2) deactivated.");
+      console.log("Copy That deactivated.");
     }
   
     // --- Initialization ---
