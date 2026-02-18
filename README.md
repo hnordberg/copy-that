@@ -7,6 +7,7 @@ A Firefox / Chrome extension that allows you to copy text or HTML from any eleme
 - **Element Selection**: Click the extension icon to activate, then hover over any element to see it highlighted
 - **Plain Text Copy**: Click an element to copy its `innerText` (plain text content)
 - **HTML Copy Mode**: Hold `Shift` while clicking to copy the element's `innerHTML` as rich HTML (with plain text fallback)
+- **MS Equation Support**: Math equations (MathML, KaTeX, MathJax) are automatically converted to MS Office Math (OMML) format for native rendering in Word, OneNote, and PowerPoint. This solves the problem of copying contents with equations from a webpage to a word document and other office applications.
 - **Visual Feedback**: 
   - Red outline for normal mode
   - Blue outline for HTML mode (Shift held)
@@ -42,11 +43,12 @@ A Firefox / Chrome extension that allows you to copy text or HTML from any eleme
 - **Manifest Version**: 3
 - **Content Script**: Injected on-demand when the extension icon is clicked
 - **Background Script**: Handles extension icon clicks and script injection
-- **Clipboard API**: Uses the modern `navigator.clipboard` API for copying text
+- **Clipboard API**: Uses `clipboardData.setData` in HTML mode (to preserve OMML markup) and `navigator.clipboard` for plain text
+- **MS Equation (OMML)**: Detects MathML from KaTeX (`.katex-mathml`), MathJax v3 (`mjx-container`), and native `<math>` elements, converting them to Office Math Markup Language wrapped in `<!--[if gte msEquation 12]>` conditional comments
 
 ## Browser Compatibility
 
-This extension is designed for Chrome and other Chromium-based browsers that support Manifest V3.
+This extension is designed for Firefox, Chrome and other Chromium-based browsers that support Manifest V3.
 
 ## License
 
