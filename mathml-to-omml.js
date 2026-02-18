@@ -313,6 +313,7 @@ window.CopyThatMath = (() => {
     }
 
     function readGroup() {
+      skip();
       if (peek() !== '{') return null;
       adv();
       const r = parseExpr('}');
@@ -334,6 +335,7 @@ window.CopyThatMath = (() => {
     }
 
     function readRawGroup() {
+      skip();
       if (peek() !== '{') return '';
       adv();
       let depth = 1, r = '';
@@ -358,7 +360,12 @@ window.CopyThatMath = (() => {
       return ch === '.' ? '' : ch;
     }
 
+    const STYLE_NOOP = new Set([
+      'displaystyle', 'textstyle', 'scriptstyle', 'scriptscriptstyle',
+    ]);
+
     function handleCmd(cmd) {
+      if (STYLE_NOOP.has(cmd)) return '';
       if (GREEK[cmd]) return omRun(GREEK[cmd], 'i');
       if (SYMS[cmd] !== undefined) return omRun(SYMS[cmd]);
 
@@ -462,7 +469,9 @@ window.CopyThatMath = (() => {
 
         let atom = '';
 
-        if (ch === '\\') {
+        if (ch === '{') {
+          atom = readGroup() || '';
+        } else if (ch === '\\') {
           const sp = pos;
           adv();
           const cmd = readCmd();
@@ -524,6 +533,14 @@ window.CopyThatMath = (() => {
 
   // ── Detection & wrapping ──────────────────────────────────────────
 
+  const WIKI_MATH_SELECTOR =
+    'img.mwe-math-fallback-image-inline, img.mwe-math-fallback-image-display';
+
+  function stripDisplayStyle(tex) {
+    const m = tex.match(/^\{\\(?:displaystyle|textstyle)\s+([\s\S]*)\}$/);
+    return m ? m[1].trim() : tex;
+  }
+
   function findMathElements(container) {
     const results = [];
     const handled = new Set();
@@ -534,6 +551,15 @@ window.CopyThatMath = (() => {
       if (p) handled.add(p);
     }
 
+    function isHandled(el) {
+      if (handled.has(el)) return true;
+      for (const h of handled) {
+        if (h.contains && h.contains(el)) return true;
+      }
+      return false;
+    }
+
+    // 1. KaTeX with MathML
     container.querySelectorAll('.katex').forEach(el => {
       const m = el.querySelector('.katex-mathml math, math');
       if (m) {
@@ -542,15 +568,44 @@ window.CopyThatMath = (() => {
         mark(el); mark(outer);
       }
     });
+
+    // 2. MathJax v3
     container.querySelectorAll('mjx-container').forEach(el => {
       if (handled.has(el)) return;
       const m = el.querySelector('math');
       if (m) { results.push({ element: el, mathml: m, latex: null }); mark(el); }
     });
-    container.querySelectorAll('math').forEach(m => {
-      if (![...handled].some(h => h === m || (h.contains && h.contains(m))))
-        { results.push({ element: m, mathml: m, latex: null }); mark(m); }
+
+    // 3. Wikipedia .mwe-math-element containers (contain both hidden MathML
+    //    and a visible <img>; we replace the whole container to avoid duplicates)
+    container.querySelectorAll('.mwe-math-element').forEach(el => {
+      if (isHandled(el)) return;
+      const isBlock = el.classList.contains('mwe-math-element-block');
+      const math = el.querySelector('math');
+      if (math) {
+        results.push({ element: el, mathml: math, latex: null, display: isBlock });
+        mark(el);
+        return;
+      }
+      const img = el.querySelector(WIKI_MATH_SELECTOR);
+      if (img) {
+        const tex = stripDisplayStyle((img.getAttribute('alt') || '').trim());
+        if (tex) {
+          results.push({ element: el, mathml: null, latex: tex, display: isBlock });
+          mark(el);
+        }
+      }
     });
+
+    // 4. Native MathML not already inside a handled container
+    container.querySelectorAll('math').forEach(m => {
+      if (!isHandled(m)) {
+        results.push({ element: m, mathml: m, latex: null });
+        mark(m);
+      }
+    });
+
+    // 5. LaTeX via data-math attribute (KaTeX HTML-only or custom renderers)
     container.querySelectorAll('[data-math]').forEach(el => {
       if (handled.has(el)) return;
       const tex = el.getAttribute('data-math');
@@ -561,6 +616,18 @@ window.CopyThatMath = (() => {
         handled.add(el);
       }
     });
+
+    // 6. Standalone Wikipedia math images outside .mwe-math-element
+    container.querySelectorAll(WIKI_MATH_SELECTOR).forEach(img => {
+      if (isHandled(img)) return;
+      const tex = stripDisplayStyle((img.getAttribute('alt') || '').trim());
+      if (tex) {
+        const isBlock = img.classList.contains('mwe-math-fallback-image-display');
+        results.push({ element: img, mathml: null, latex: tex, display: isBlock });
+        handled.add(img);
+      }
+    });
+
     return results;
   }
 

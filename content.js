@@ -59,14 +59,17 @@
                 ? mathMLtoOMML(item.mathml)
                 : latexToOMML(item.latex, item.display);
               const text = item.mathml ? (item.mathml.textContent || '') : (item.latex || '');
-              reps.push({ ph, omml, text });
+              const isBlock = item.display ||
+                (item.mathml && item.mathml.getAttribute('display') === 'block');
+              reps.push({ ph, omml, text, display: !!isBlock });
               item.element.parentNode.replaceChild(document.createTextNode(ph), item.element);
             });
             let body = tc.innerHTML;
-            for (const { ph, omml, text } of reps) {
-              body = body.replace(ph,
+            for (const { ph, omml, text, display } of reps) {
+              const eq =
                 `<!--[if gte msEquation 12]>${omml}<![endif]-->` +
-                `<![if !msEquation]><span>${escXml(text)}</span><![endif]>`);
+                `<![if !msEquation]><span>${escXml(text)}</span><![endif]>`;
+              body = body.replace(ph, display ? `<br>${eq}<br>` : ` ${eq} `);
             }
             htmlToCopy = buildMsOfficeHtml(body);
             console.log('Math detected, converted to MS Equation (OMML) format.');
