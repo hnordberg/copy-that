@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Copy That",
   "version": "2.0",
-  "description": "Click an element on the page to copy its innerText or innerHTML to the clipboard.",
+  "description": "Click an element on the page to copy its innerText or innerHTML to the clipboard. Math equations are automatically converted to MS Office Math (OMML) format for native rendering in Word, OneNote, and PowerPoint.",
   "permissions": ["activeTab", "scripting", "clipboardWrite"],
   "background": {
     "scripts": ["background.js"]
