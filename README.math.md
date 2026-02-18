@@ -85,7 +85,7 @@ there is no sanitisation-free alternative in the Async Clipboard API yet.
 ## How math is detected — `findMathElements()`
 
 The detection runs against a temporary DOM created from the clicked element's
-`innerHTML`. It checks four sources in priority order:
+`innerHTML`. It checks six sources in priority order:
 
 ### 1. KaTeX with MathML
 
@@ -144,6 +144,39 @@ we read the LaTeX string and convert it via the LaTeX → OMML parser.
 Block-level equations are detected by the presence of `class="math-block"` or a
 `.katex-display` child, and are wrapped in `<m:oMathPara>` (display mode)
 instead of plain `<m:oMath>` (inline).
+
+### 5. Wikipedia `.mwe-math-element` containers
+
+Wikipedia wraps each equation in a container like:
+
+```
+<span class="mwe-math-element mwe-math-element-inline">
+  <span class="mwe-math-mathml-inline mwe-math-mathml-a11y" style="display: none;">
+    <math xmlns="http://www.w3.org/1998/Math/MathML">...</math>
+  </span>
+  <img class="mwe-math-fallback-image-inline"
+       alt="{\displaystyle E=mc^{2}}" src="...">
+</span>
+```
+
+The container has **both** a hidden `<math>` element (for screen-reader
+accessibility) and a visible `<img>` fallback (the rendered SVG/PNG). If we
+detected these independently, every equation would appear twice in the output.
+
+This pass finds `.mwe-math-element` containers and replaces the **whole
+container** as a single unit. It prefers the `<math>` element (MathML → OMML
+path, higher fidelity) and falls back to extracting LaTeX from the `<img>` `alt`
+attribute if no `<math>` is present. The `alt` text is typically wrapped in
+`{\displaystyle ...}`, which `stripDisplayStyle()` removes before parsing.
+Display vs inline is determined by `mwe-math-element-block` on the container.
+
+### 6. Standalone Wikipedia math images
+
+A safety-net pass for `img.mwe-math-fallback-image-inline` /
+`img.mwe-math-fallback-image-display` elements that are **not** inside a
+`.mwe-math-element` container (e.g. other MediaWiki-based wikis with different
+markup). Same logic as above: strip `{\displaystyle ...}`, convert via LaTeX →
+OMML.
 
 ---
 
@@ -219,9 +252,12 @@ string) and `pos` (the read cursor). Key internal functions:
 - **`handleCmd(cmd)`** — Dispatches a `\command` name. Checks the Greek, symbol,
   n-ary, fraction, sqrt, text, accent, delimiter, and environment tables in
   order. Falls back to emitting the command name as upright text.
-- **`readGroup()`** — Reads `{...}` and returns the parsed OMML inside.
-- **`readRawGroup()`** — Reads `{...}` and returns the raw string (used for
-  `\text{}` where we want literal characters, not parsed math).
+- **`readGroup()`** — Skips whitespace, reads `{...}` and returns the parsed
+  OMML inside. The whitespace skip is important because LaTeX (and Wikipedia's
+  alt text in particular) allows spaces between commands and their arguments,
+  e.g. `\frac {t}{r^{k}}`.
+- **`readRawGroup()`** — Same whitespace skip, reads `{...}` and returns the raw
+  string (used for `\text{}` where we want literal characters, not parsed math).
 - **`readToken()`** — Reads a single token: a group, a command, a letter, a
   number, or a single character.
 - **`parseEnv(env)`** — Handles `\begin{env}...\end{env}`. Splits on `\\` for
@@ -247,9 +283,11 @@ string) and `pos` (the read cursor). Key internal functions:
 - **Alignment environments** — `align`, `aligned`, `gather`, `equation` etc.
   are not supported. They would need multi-equation handling that OMML doesn't
   directly model.
-- **Display style** — `\displaystyle` and `\textstyle` are ignored. The display
-  vs inline distinction comes from the container's `data-math` context
-  (`math-block` class), not from LaTeX commands.
+- **Display style** — `\displaystyle`, `\textstyle`, `\scriptstyle`, and
+  `\scriptscriptstyle` are treated as no-ops. The display vs inline distinction
+  comes from the container's context (CSS class or element type), not from LaTeX
+  commands. The `{\displaystyle ...}` wrapper used by Wikipedia's `alt` text is
+  stripped during detection by `stripDisplayStyle()` before parsing.
 
 ---
 
