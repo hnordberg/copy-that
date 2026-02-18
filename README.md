@@ -26,7 +26,7 @@ A Firefox / Chrome extension that allows you to copy text or HTML from any eleme
 ## Usage
 
 1. Navigate to any webpage
-2. Click the "Copy That (V2)" extension icon in your browser toolbar
+2. Click the "Copy That" extension icon in your browser toolbar
 3. Hover over elements on the page to see them highlighted
 4. Click an element to copy its text content
    - **Normal click**: Copies plain text (`innerText`)
@@ -35,24 +35,18 @@ A Firefox / Chrome extension that allows you to copy text or HTML from any eleme
 
 ## Requirements
 
-- Firefox browser (or compatible Chromium-based browser that still uses V2 extensions)
-- Manifest V2 support (Note: This extension uses Manifest V2)
-
-## Permissions
-
-- `activeTab`: Required to inject the content script into the current tab
-- `clipboardWrite`: Required to write text to the clipboard
+- Firefox, Chrome, Edge, etc. browser
 
 ## Technical Details
 
-- **Manifest Version**: 2
+- **Manifest Version**: 3
 - **Content Script**: Injected on-demand when the extension icon is clicked
 - **Background Script**: Handles extension icon clicks and script injection
 - **Clipboard API**: Uses the modern `navigator.clipboard` API for copying text
 
 ## Browser Compatibility
 
-This extension is designed for Chrome and other Chromium-based browsers that support Manifest V2. Note that Manifest V2 is being phased out in favor of Manifest V3, so this extension may need to be updated in the future.
+This extension is designed for Chrome and other Chromium-based browsers that support Manifest V3.
 
 ## License
 
