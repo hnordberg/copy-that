@@ -12,6 +12,8 @@
     const highlightShiftStyle = 'outline: 2px solid blue; cursor: pointer;';
     const successStyle = 'outline: 2px solid limegreen;'; // Style after sending copy request
   
+    const { escXml, mathMLtoOMML, latexToOMML, findMathElements, buildMsOfficeHtml } = window.CopyThatMath;
+
     // --- Event Handlers ---
   
     function handleMouseOver(event) {
@@ -42,42 +44,64 @@
       const isHtmlMode = event.shiftKey;
 
       if (isHtmlMode) {
-        const htmlToCopy = targetElement.innerHTML;
-        const textFallback = targetElement.innerText; // Fallback plain text
+        const textFallback = targetElement.innerText;
+        let htmlToCopy = targetElement.innerHTML;
+
+        try {
+          const tc = document.createElement('div');
+          tc.innerHTML = htmlToCopy;
+          const mathItems = findMathElements(tc);
+          if (mathItems.length > 0) {
+            const reps = [];
+            mathItems.forEach((item, i) => {
+              const ph = `___OMML_PH_${i}___`;
+              const omml = item.mathml
+                ? mathMLtoOMML(item.mathml)
+                : latexToOMML(item.latex, item.display);
+              const text = item.mathml ? (item.mathml.textContent || '') : (item.latex || '');
+              reps.push({ ph, omml, text });
+              item.element.parentNode.replaceChild(document.createTextNode(ph), item.element);
+            });
+            let body = tc.innerHTML;
+            for (const { ph, omml, text } of reps) {
+              body = body.replace(ph,
+                `<!--[if gte msEquation 12]>${omml}<![endif]-->` +
+                `<![if !msEquation]><span>${escXml(text)}</span><![endif]>`);
+            }
+            htmlToCopy = buildMsOfficeHtml(body);
+            console.log('Math detected, converted to MS Equation (OMML) format.');
+          }
+        } catch (e) {
+          console.warn('OMML conversion failed, using raw HTML:', e);
+          htmlToCopy = targetElement.innerHTML;
+        }
 
         if (htmlToCopy) {
           try {
-            const htmlBlob = new Blob([htmlToCopy], { type: 'text/html' });
-            const textBlob = new Blob([textFallback], { type: 'text/plain' });
-            const item = new ClipboardItem({
-              'text/html': htmlBlob,
-              'text/plain': textBlob
-            });
-
-            navigator.clipboard.write([item])
-              .then(() => {
-                console.log('innerHTML (as HTML, with text fallback) copied to clipboard. HTML snippet:', htmlToCopy.substring(0, 100) + (htmlToCopy.length > 100 ? '...' : ''));
-                targetElement.style.cssText += successStyle;
-                setTimeout(() => {
-                  if (targetElement) {
-                    targetElement.style.outline = '';
-                  }
-                }, 2000);
-              })
-              .catch(err => {
-                console.error('Failed to copy as rich text: ', err);
-                alert("Failed to copy as rich text. See console for details.");
-              })
-              .finally(() => {
-                cleanup();
-              });
+            const sel = window.getSelection();
+            sel.selectAllChildren(targetElement);
+            const copyHandler = (e) => {
+              e.clipboardData.setData('text/html', htmlToCopy);
+              e.clipboardData.setData('text/plain', textFallback);
+              e.preventDefault();
+            };
+            document.addEventListener('copy', copyHandler);
+            document.execCommand('copy');
+            document.removeEventListener('copy', copyHandler);
+            sel.removeAllRanges();
+            console.log('HTML copied to clipboard.');
+            targetElement.style.cssText += successStyle;
+            setTimeout(() => {
+              if (targetElement) targetElement.style.outline = '';
+            }, 2000);
           } catch (error) {
-            console.error("Error creating ClipboardItem: ", error);
-            alert("Failed to prepare HTML for clipboard. See console.");
+            console.error("Error copying HTML: ", error);
+            alert("Failed to copy. See console for details.");
+          } finally {
             cleanup();
           }
         } else {
-          console.log("Clicked element has no innerHTML to copy for rich text.");
+          console.log("Clicked element has no innerHTML to copy.");
           cleanup();
         }
       } else { // Plain text mode
