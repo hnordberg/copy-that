@@ -15,6 +15,11 @@
     const { escXml, mathMLtoOMML, latexToOMML, findMathElements, buildMsOfficeHtml,
             stripInvisible, mathText } = window.CopyThatMath;
 
+    function wrapEquation(omml, fallbackText) {
+      return `<!--[if gte msEquation 12]>${omml}<![endif]-->` +
+        `<![if !msEquation]><span>${escXml(fallbackText)}</span><![endif]>`;
+    }
+
     // --- Event Handlers ---
   
     function handleMouseOver(event) {
@@ -38,8 +43,8 @@
     }
   
     function handleClick(event) {
-      event.preventDefault(); // Stop default click behavior (like following a link)
-      event.stopPropagation(); // Stop the click from bubbling up
+      event.preventDefault();
+      event.stopPropagation();
   
       let targetElement = event.target;
       const isHtmlMode = event.shiftKey;
@@ -73,14 +78,24 @@
         if (altMathTex) {
           try {
             const omml = latexToOMML(altMathTex, true);
-            const eq =
-              `<!--[if gte msEquation 12]>${omml}<![endif]-->` +
-              `<![if !msEquation]><span>${escXml(altMathTex)}</span><![endif]>`;
+            const eq = wrapEquation(omml, altMathTex);
             htmlToCopy = buildMsOfficeHtml(stripInvisible(eq));
             textFallback = altMathTex;
             console.log('Math from element attribute, converted to MS Equation (OMML) format.');
           } catch (e) {
             console.warn('OMML from alt attribute failed:', e);
+          }
+        } else if (targetElement.tagName && targetElement.tagName.toLowerCase() === 'math') {
+          try {
+            const omml = mathMLtoOMML(targetElement);
+            const text = mathText(targetElement);
+            const isBlock = targetElement.getAttribute('display') === 'block';
+            const eq = wrapEquation(omml, text);
+            htmlToCopy = buildMsOfficeHtml(stripInvisible(isBlock ? `<br>${eq}<br>` : ` ${eq} `));
+            textFallback = text;
+            console.log('Native MathML element, converted to MS Equation (OMML) format.');
+          } catch (e) {
+            console.warn('OMML from MathML element failed:', e);
           }
         }
 
@@ -102,9 +117,7 @@
             });
             let body = tc.innerHTML;
             for (const { ph, omml, text, display } of reps) {
-              const eq =
-                `<!--[if gte msEquation 12]>${omml}<![endif]-->` +
-                `<![if !msEquation]><span>${escXml(text)}</span><![endif]>`;
+              const eq = wrapEquation(omml, text);
               body = body.replace(ph, display ? `<br>${eq}<br>` : ` ${eq} `);
             }
             body = stripInvisible(body);
@@ -127,6 +140,9 @@
               e.preventDefault();
             };
             document.addEventListener('copy', copyHandler);
+            // execCommand('copy') + clipboardData.setData bypasses Chromium's HTML
+            // sanitiser, which would strip the OMML conditional comments and
+            // namespace-prefixed elements. navigator.clipboard.write() cannot do this.
             document.execCommand('copy');
             document.removeEventListener('copy', copyHandler);
             sel.removeAllRanges();

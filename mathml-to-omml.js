@@ -331,6 +331,7 @@ window.CopyThatMath = (() => {
 
   function latexToOMML(tex, display) {
     let src = tex, pos = 0;
+    let lastRightDelim = ')';
 
     function peek() { return pos < src.length ? src[pos] : ''; }
     function adv()  { return src[pos++]; }
@@ -505,14 +506,14 @@ window.CopyThatMath = (() => {
           const sp = pos;
           adv();
           const cmd = readCmd();
-          if (cmd === 'right') { readDelimCh(); break; }
+          if (cmd === 'right') { lastRightDelim = readDelimCh() || ')'; break; }
           if (cmd === 'end') { pos = sp; break; }
           if (cmd === 'left') {
             const openCh = readDelimCh();
+            lastRightDelim = ')';
             const inner = parseExpr('');
-            return result + omDelim(openCh || '(', '' || ')', inner);
-          }
-          if (cmd === '') {
+            atom = omDelim(openCh || '(', lastRightDelim, inner);
+          } else if (cmd === '') {
             atom = omRun(peek() ? adv() : '\\');
           } else {
             atom = handleCmd(cmd);
@@ -618,7 +619,24 @@ window.CopyThatMath = (() => {
     container.querySelectorAll('math').forEach(m => {
       if (isHandled(m)) return;
       let wrapper = null;
-      for (let el = m.parentElement; el && el !== container; el = el.parentElement) {
+      for (let el = m.parentElement; el; el = el.parentElement) {
+        if (el === container) {
+          // Walk-up reached the container (can't replace it). Use the direct
+          // child of container that wraps <math> so the OMML placeholder
+          // doesn't end up inside a display:none span.
+          let dc = m;
+          while (dc.parentElement && dc.parentElement !== container)
+            dc = dc.parentElement;
+          if (dc !== m) wrapper = dc;
+          // Remove sibling duplicates from the temp DOM entirely.
+          const cImg = el.querySelector(':scope > img[alt]');
+          if (cImg && LATEX_ALT_RE.test(cImg.getAttribute('alt'))) {
+            mark(cImg); cImg.remove();
+          }
+          const cSvg = el.querySelector(':scope > svg text');
+          if (cSvg) { const s = cSvg.closest('svg'); if (s) { mark(s); s.remove(); } }
+          break;
+        }
         if (el.querySelector(':scope > svg text')) { wrapper = el; break; }
         const img = el.querySelector(':scope > img[alt]');
         if (img && LATEX_ALT_RE.test(img.getAttribute('alt'))) {
