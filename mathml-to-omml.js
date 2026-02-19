@@ -436,17 +436,6 @@ window.CopyThatMath = (() => {
       if (cmd === 'overline' || cmd === 'bar') return omBar('top', readGroup() || readToken());
       if (cmd === 'underline') return omBar('bot', readGroup() || readToken());
 
-      if (cmd === 'left') {
-        const openCh = readDelimCh();
-        const inner = parseExpr('');
-        const closeCh = peek() ? '' : '';
-        return omDelim(openCh || '(', closeCh || ')', inner);
-      }
-      if (cmd === 'right') {
-        readDelimCh();
-        return '';
-      }
-
       if (cmd === 'begin') {
         const env = readRawGroup();
         return parseEnv(env);
@@ -701,6 +690,6 @@ window.CopyThatMath = (() => {
   return {
     escXml, mathMLtoOMML, latexToOMML,
     findMathElements, buildMsOfficeHtml,
-    stripInvisible, mathText,
+    stripInvisible, stripDisplayStyle, mathText,
   };
 })();
