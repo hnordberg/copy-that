@@ -13,7 +13,7 @@
     const successStyle = 'outline: 2px solid limegreen;'; // Style after sending copy request
   
     const { escXml, mathMLtoOMML, latexToOMML, findMathElements, buildMsOfficeHtml,
-            stripInvisible, mathText } = window.CopyThatMath;
+            stripInvisible, mathText, stripDisplayStyle } = window.CopyThatMath;
 
     function wrapEquation(omml, fallbackText) {
       return `<!--[if gte msEquation 12]>${omml}<![endif]-->` +
@@ -74,13 +74,16 @@
       if (isHtmlMode) {
         let textFallback = targetElement.innerText;
         let htmlToCopy = altMathTex ? '' : targetElement.innerHTML;
+        let mathHandled = false;
 
         if (altMathTex) {
           try {
-            const omml = latexToOMML(altMathTex, true);
-            const eq = wrapEquation(omml, altMathTex);
+            const tex = stripDisplayStyle(altMathTex);
+            const omml = latexToOMML(tex, true);
+            const eq = wrapEquation(omml, tex);
             htmlToCopy = buildMsOfficeHtml(stripInvisible(eq));
-            textFallback = altMathTex;
+            textFallback = tex;
+            mathHandled = true;
             console.log('Math from element attribute, converted to MS Equation (OMML) format.');
           } catch (e) {
             console.warn('OMML from alt attribute failed:', e);
@@ -93,13 +96,14 @@
             const eq = wrapEquation(omml, text);
             htmlToCopy = buildMsOfficeHtml(stripInvisible(isBlock ? `<br>${eq}<br>` : ` ${eq} `));
             textFallback = text;
+            mathHandled = true;
             console.log('Native MathML element, converted to MS Equation (OMML) format.');
           } catch (e) {
             console.warn('OMML from MathML element failed:', e);
           }
         }
 
-        try {
+        if (!mathHandled) try {
           const tc = new DOMParser().parseFromString(htmlToCopy, 'text/html').body;
           const mathItems = findMathElements(tc);
           if (mathItems.length > 0) {
