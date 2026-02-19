@@ -82,7 +82,33 @@ there is no sanitisation-free alternative in the Async Clipboard API yet.
 
 ---
 
-## How math is detected — `findMathElements()`
+## How math is detected
+
+### Click target resolution (content.js)
+
+Before detection begins, `content.js` resolves the clicked element to the right
+target. If the click landed inside a math container's visual rendering (e.g. on
+an `<mjx-msup>` inside a MathJax equation), the element alone would contain only
+visual markup — not the real math data. To fix this, the click handler walks up
+via `closest('mjx-container, .katex, math, .mwe-math-element')` to find the
+nearest math container ancestor.
+
+After the walk-up, three **direct-conversion shortcuts** are checked before
+entering the general `findMathElements()` pipeline:
+
+1. **Void element with LaTeX `alt`** — If the target has no `innerHTML` (e.g.
+   `<img>`) and its `alt` attribute contains LaTeX, it is converted directly
+   via `latexToOMML()` in display mode. This handles clicking a standalone
+   Wikipedia equation image.
+2. **Native `<math>` element** — If the target is a `<math>` element itself
+   (e.g., on ArXiv where native MathML is rendered), it is passed directly to
+   `mathMLtoOMML()`. This is needed because `innerHTML` of a `<math>` element
+   gives the inner content without the `<math>` tag, which `findMathElements`
+   wouldn't detect.
+3. **General pipeline** — Everything else goes through `findMathElements()` on
+   the target's `innerHTML`.
+
+### `findMathElements()` — five detection passes
 
 The detection runs against a temporary DOM created from the clicked element's
 `innerHTML`. It checks five sources in priority order:
@@ -144,10 +170,14 @@ data attributes (which break when sites redesign), the pass walks up from each
 as a direct child:
 
 ```
-for (let el = m.parentElement; el && el !== container; el = el.parentElement) {
-  // SVG with text elements → Google AI Overview pattern
+for (let el = m.parentElement; el; el = el.parentElement) {
+  if (el === container) {
+    // Can't replace the container — use the direct child that wraps <math>
+    // and remove duplicate siblings (img, svg) from the temp DOM.
+    ...
+    break;
+  }
   if (el.querySelector(':scope > svg text')) { wrapper = el; break; }
-  // IMG with LaTeX alt text → Wikipedia pattern
   const img = el.querySelector(':scope > img[alt]');
   if (img && LATEX_ALT_RE.test(img.getAttribute('alt'))) { wrapper = el; break; }
 }
@@ -157,10 +187,23 @@ for (let el = m.parentElement; el && el !== container; el = el.parentElement) {
 command like `\displaystyle`, `\frac`, `\sqrt`, etc. This is a strong structural
 signal without depending on any site's class naming conventions.
 
-When a wrapper is found, the **entire container** is replaced by the OMML
-placeholder — removing both the hidden MathML and the visible duplicate in one
-operation. When no wrapper is found, just the `<math>` element itself is
-replaced (the plain native MathML case, e.g. ArXiv).
+When a wrapper is found below the container, the **entire wrapper** is replaced
+by the OMML placeholder — removing both the hidden MathML and the visible
+duplicate in one operation.
+
+**Container boundary case.** When the walk-up reaches the temp-div container
+itself (e.g. the user clicked on a `.mwe-math-element` whose children include
+a hidden `<span>` with `<math>` and a sibling `<img>`), the container can't be
+replaced. Instead the pass:
+
+1. Uses the **direct child of the container** that wraps `<math>` as the
+   replacement element — this ensures the OMML placeholder lands outside any
+   `display: none` wrapper.
+2. **Removes** duplicate `<img>` / `<svg>` siblings from the temp DOM entirely,
+   preventing pass 5 from re-processing them.
+
+When no wrapper is found at all, just the `<math>` element itself is replaced
+(the plain native MathML case, e.g. ArXiv).
 
 ### 4. LaTeX source via `data-math` attribute (fallback)
 
@@ -194,16 +237,6 @@ other sites that render math to images server-side.
 The `alt` text is often wrapped in `{\displaystyle ...}`, which
 `stripDisplayStyle()` removes before parsing. The LaTeX → OMML parser handles
 the rest.
-
-### Direct click on void elements (content.js)
-
-When the user clicks directly on a void element like `<img>` (which has no
-`innerHTML`), `content.js` checks the element's `alt` attribute for LaTeX
-commands before falling back to DOM traversal. If LaTeX is found, the alt text
-is converted directly via `latexToOMML()` in display mode, bypassing the
-`findMathElements()` pipeline entirely. This avoids duplicate detection issues
-that arise when walking up to a parent that contains both a hidden `<math>` and
-the visible `<img>`.
 
 ---
 
@@ -276,11 +309,17 @@ string) and `pos` (the read cursor). Key internal functions:
 - **`parseExpr(terminator)`** — The main loop. Reads atoms until it hits the
   `terminator` character (e.g. `}`, `]`, or empty string for end-of-input).
   After each atom, checks for trailing `_` / `^` to attach sub/superscripts.
-  If the atom is a **nary operator** (contains the `<m:e/></m:nary>` marker),
-  `parseExpr` recursively parses the remaining expression as the nary body,
-  fills it into `<m:e>`, and returns. This mirrors the MathML walker's
-  `omChildList` behaviour. Scope is bounded by the current group terminator,
-  so `\left...\right` delimiters naturally limit the body of an inner nary.
+  Two special post-atom behaviours:
+  - **Nary body collection**: if the atom contains the `<m:e/></m:nary>` marker,
+    `parseExpr` recursively parses the remaining expression as the nary body,
+    fills it into `<m:e>`, and returns. This mirrors the MathML walker's
+    `omChildList` behaviour. Scope is bounded by the current group terminator,
+    so `\left...\right` delimiters naturally limit the body of an inner nary.
+  - **`\left...\right` continuation**: the `\left` handler produces the `<m:d>`
+    atom and **continues the loop** (rather than returning), so trailing
+    subscripts/superscripts like `\left(...\right)_{k=0}` correctly attach to
+    the delimiter. The close delimiter is captured from `\right` via a shared
+    `lastRightDelim` variable.
 - **`handleCmd(cmd)`** — Dispatches a `\command` name. Checks the Greek, symbol,
   n-ary, fraction, sqrt, text, accent, delimiter, and environment tables in
   order. Falls back to emitting the command name as upright text.
@@ -314,11 +353,9 @@ string) and `pos` (the read cursor). Key internal functions:
 - **No colour commands** — `\color{red}{x}` is silently ignored; the content
   renders but without colour.
 - **No `\phantom`** — Invisible spacers are dropped.
-- **`\left...\right` close delimiter** — After `\right` is consumed inside
-  `parseExpr`, the closing character is read but the `omDelim` call from the
-  `\left` handler currently defaults to `)` if it can't recover the close char.
-  This works for the common `\left(...\right)` case but may produce a stray `)`
-  for unusual delimiter pairs.
+- **`\left...\right` close delimiter** — Unusual delimiter pairs like
+  `\left\langle...\right\rangle` work for delimiters in the `readDelimCh`
+  table, but unlisted delimiters fall back to `)`.
 - **Alignment environments** — `align`, `aligned`, `gather`, `equation` etc.
   are not supported. They would need multi-equation handling that OMML doesn't
   directly model.
