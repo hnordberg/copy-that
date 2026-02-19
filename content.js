@@ -85,8 +85,7 @@
         }
 
         try {
-          const tc = document.createElement('div');
-          tc.innerHTML = htmlToCopy;
+          const tc = new DOMParser().parseFromString(htmlToCopy, 'text/html').body;
           const mathItems = findMathElements(tc);
           if (mathItems.length > 0) {
             const reps = [];
