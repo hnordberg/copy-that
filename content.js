@@ -12,7 +12,8 @@
     const highlightShiftStyle = 'outline: 2px solid blue; cursor: pointer;';
     const successStyle = 'outline: 2px solid limegreen;'; // Style after sending copy request
   
-    const { escXml, mathMLtoOMML, latexToOMML, findMathElements, buildMsOfficeHtml } = window.CopyThatMath;
+    const { escXml, mathMLtoOMML, latexToOMML, findMathElements, buildMsOfficeHtml,
+            stripInvisible, mathText } = window.CopyThatMath;
 
     // --- Event Handlers ---
   
@@ -40,12 +41,48 @@
       event.preventDefault(); // Stop default click behavior (like following a link)
       event.stopPropagation(); // Stop the click from bubbling up
   
-      const targetElement = event.target;
+      let targetElement = event.target;
       const isHtmlMode = event.shiftKey;
 
+      // If clicked inside a math container's visual rendering, walk up so
+      // the full equation is captured and findMathElements can detect it.
+      const mathAncestor = targetElement.closest(
+        'mjx-container, .katex, math, .mwe-math-element');
+      if (mathAncestor) targetElement = mathAncestor;
+
+      // Void/empty elements (img, br, hr, input…) have no innerHTML.
+      // If the element carries math in an attribute (e.g. img alt with LaTeX),
+      // use that directly. Otherwise walk up to the nearest ancestor with content.
+      let altMathTex = null;
+      if (!targetElement.innerHTML) {
+        const alt = (targetElement.getAttribute('alt') || '').trim();
+        if (isHtmlMode && alt && /\\[a-zA-Z]/.test(alt)) {
+          altMathTex = alt;
+        } else {
+          while (targetElement && !targetElement.innerHTML) {
+            targetElement = targetElement.parentElement;
+          }
+          if (!targetElement) targetElement = event.target;
+        }
+      }
+
       if (isHtmlMode) {
-        const textFallback = targetElement.innerText;
-        let htmlToCopy = targetElement.innerHTML;
+        let textFallback = targetElement.innerText;
+        let htmlToCopy = altMathTex ? '' : targetElement.innerHTML;
+
+        if (altMathTex) {
+          try {
+            const omml = latexToOMML(altMathTex, true);
+            const eq =
+              `<!--[if gte msEquation 12]>${omml}<![endif]-->` +
+              `<![if !msEquation]><span>${escXml(altMathTex)}</span><![endif]>`;
+            htmlToCopy = buildMsOfficeHtml(stripInvisible(eq));
+            textFallback = altMathTex;
+            console.log('Math from element attribute, converted to MS Equation (OMML) format.');
+          } catch (e) {
+            console.warn('OMML from alt attribute failed:', e);
+          }
+        }
 
         try {
           const tc = document.createElement('div');
@@ -58,7 +95,7 @@
               const omml = item.mathml
                 ? mathMLtoOMML(item.mathml)
                 : latexToOMML(item.latex, item.display);
-              const text = item.mathml ? (item.mathml.textContent || '') : (item.latex || '');
+              const text = item.mathml ? mathText(item.mathml) : (item.latex || '');
               const isBlock = item.display ||
                 (item.mathml && item.mathml.getAttribute('display') === 'block');
               reps.push({ ph, omml, text, display: !!isBlock });
@@ -71,6 +108,7 @@
                 `<![if !msEquation]><span>${escXml(text)}</span><![endif]>`;
               body = body.replace(ph, display ? `<br>${eq}<br>` : ` ${eq} `);
             }
+            body = stripInvisible(body);
             htmlToCopy = buildMsOfficeHtml(body);
             console.log('Math detected, converted to MS Equation (OMML) format.');
           }
@@ -82,7 +120,8 @@
         if (htmlToCopy) {
           try {
             const sel = window.getSelection();
-            sel.selectAllChildren(targetElement);
+            const selTarget = targetElement.firstChild ? targetElement : (targetElement.parentElement || targetElement);
+            sel.selectAllChildren(selTarget);
             const copyHandler = (e) => {
               e.clipboardData.setData('text/html', htmlToCopy);
               e.clipboardData.setData('text/plain', textFallback);

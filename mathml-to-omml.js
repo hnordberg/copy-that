@@ -26,9 +26,14 @@ window.CopyThatMath = (() => {
             .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
+  const INVISIBLE = /[\u200B-\u200D\u2060-\u2064\uFEFF]/g;
+
   function omRun(text, style) {
     if (!text) return '';
-    const rPr = style ? `<m:rPr><m:sty m:val="${style}"/></m:rPr>` : '';
+    text = text.replace(INVISIBLE, '');
+    if (!text) return '';
+    const rPr = (style && style !== 'i')
+      ? `<m:rPr><m:sty m:val="${style}"/></m:rPr>` : '';
     return `<m:r>${rPr}<m:t>${escXml(text)}</m:t></m:r>`;
   }
 
@@ -36,49 +41,52 @@ window.CopyThatMath = (() => {
     let pr = '';
     if (open !== '(') pr += `<m:begChr m:val="${escXml(open)}"/>`;
     if (close !== ')') pr += `<m:endChr m:val="${escXml(close)}"/>`;
-    return `<m:d><m:dPr>${pr}<m:ctrlPr/></m:dPr><m:e>${inner}</m:e></m:d>`;
+    const dPr = pr ? `<m:dPr>${pr}</m:dPr>` : '';
+    return `<m:d>${dPr}<m:e>${inner}</m:e></m:d>`;
   }
 
   function omSub(base, sub) {
-    return `<m:sSub><m:sSubPr><m:ctrlPr/></m:sSubPr>` +
-      `<m:e>${base}</m:e><m:sub>${sub}</m:sub></m:sSub>`;
+    return `<m:sSub><m:e>${base}</m:e><m:sub>${sub}</m:sub></m:sSub>`;
   }
   function omSup(base, sup) {
-    return `<m:sSup><m:sSupPr><m:ctrlPr/></m:sSupPr>` +
-      `<m:e>${base}</m:e><m:sup>${sup}</m:sup></m:sSup>`;
+    return `<m:sSup><m:e>${base}</m:e><m:sup>${sup}</m:sup></m:sSup>`;
   }
   function omSubSup(base, sub, sup) {
-    return `<m:sSubSup><m:sSubSupPr><m:ctrlPr/></m:sSubSupPr>` +
-      `<m:e>${base}</m:e><m:sub>${sub}</m:sub><m:sup>${sup}</m:sup></m:sSubSup>`;
+    return `<m:sSubSup><m:e>${base}</m:e><m:sub>${sub}</m:sub><m:sup>${sup}</m:sup></m:sSubSup>`;
   }
   function omFrac(num, den) {
-    return `<m:f><m:fPr><m:ctrlPr/></m:fPr>` +
-      `<m:num>${num}</m:num><m:den>${den}</m:den></m:f>`;
+    return `<m:f><m:num>${num}</m:num><m:den>${den}</m:den></m:f>`;
   }
   function omSqrt(body) {
-    return `<m:rad><m:radPr><m:degHide m:val="1"/><m:ctrlPr/></m:radPr>` +
+    return `<m:rad><m:radPr><m:degHide m:val="on"/><m:ctrlPr/></m:radPr>` +
       `<m:deg/><m:e>${body}</m:e></m:rad>`;
   }
   function omRoot(deg, body) {
-    return `<m:rad><m:radPr><m:ctrlPr/></m:radPr>` +
-      `<m:deg>${deg}</m:deg><m:e>${body}</m:e></m:rad>`;
+    return `<m:rad><m:deg>${deg}</m:deg><m:e>${body}</m:e></m:rad>`;
   }
-  function omNary(chr, sub, sup) {
-    return `<m:nary><m:naryPr><m:chr m:val="${escXml(chr)}"/>` +
-      `<m:limLoc m:val="subSup"/><m:ctrlPr/></m:naryPr>` +
+  function omNary(chr, sub, sup, limLoc) {
+    let pr = `<m:chr m:val="${escXml(chr)}"/><m:limLoc m:val="${limLoc || 'subSup'}"/>`;
+    if (!sub) pr += '<m:subHide m:val="on"/>';
+    if (!sup) pr += '<m:supHide m:val="on"/>';
+    return `<m:nary><m:naryPr>${pr}</m:naryPr>` +
       `<m:sub>${sub}</m:sub><m:sup>${sup}</m:sup><m:e/></m:nary>`;
   }
   function omAcc(chr, body) {
-    return `<m:acc><m:accPr><m:chr m:val="${escXml(chr)}"/>` +
-      `<m:ctrlPr/></m:accPr><m:e>${body}</m:e></m:acc>`;
+    return `<m:acc><m:accPr><m:chr m:val="${escXml(chr)}"/></m:accPr>` +
+      `<m:e>${body}</m:e></m:acc>`;
   }
   function omBar(pos, body) {
-    return `<m:bar><m:barPr><m:pos m:val="${pos}"/>` +
-      `<m:ctrlPr/></m:barPr><m:e>${body}</m:e></m:bar>`;
+    return `<m:bar><m:barPr><m:pos m:val="${pos}"/></m:barPr>` +
+      `<m:e>${body}</m:e></m:bar>`;
+  }
+
+  function expandSelfClosing(xml) {
+    return xml.replace(/<(m:\w+)(\s[^>]*)?\s*\/>/g, '<$1$2></$1>');
   }
 
   function wrapOmath(inner, display) {
-    const omath = `<m:oMath xmlns:m="${OMML_NS}">${inner}</m:oMath>`;
+    const body = expandSelfClosing(inner);
+    const omath = `<m:oMath xmlns:m="${OMML_NS}">${body}</m:oMath>`;
     return display
       ? `<m:oMathPara xmlns:m="${OMML_NS}">${omath}</m:oMathPara>`
       : omath;
@@ -90,10 +98,32 @@ window.CopyThatMath = (() => {
     return (el.localName || el.tagName || '').toLowerCase();
   }
 
-  function omChildren(node) {
+  const NARY_TAGS = new Set(['munderover', 'munder', 'msub', 'msup', 'msubsup']);
+  function isNaryProducer(node) {
+    if (node.nodeType !== 1) return false;
+    if (!NARY_TAGS.has(getTag(node))) return false;
+    const first = node.children[0];
+    return first && getTag(first) === 'mo' && NARY_OPS.has(first.textContent.trim());
+  }
+
+  function omChildList(nodes) {
     let r = '';
-    for (const c of node.childNodes) r += omNode(c);
+    for (let i = 0; i < nodes.length; i++) {
+      const c = nodes[i];
+      if (isNaryProducer(c)) {
+        const nary = omNode(c);
+        let body = '';
+        for (let j = i + 1; j < nodes.length; j++) body += omNode(nodes[j]);
+        r += nary.replace('<m:e/></m:nary>', `<m:e>${body}</m:e></m:nary>`);
+        break;
+      }
+      r += omNode(c);
+    }
     return r;
+  }
+
+  function omChildren(node) {
+    return omChildList([...node.childNodes]);
   }
 
   function omNode(node) {
@@ -145,7 +175,7 @@ window.CopyThatMath = (() => {
           l.nodeType === 1 && getTag(l) === 'mo') {
         const oc = f.textContent.trim(), cc = l.textContent.trim();
         if (f.getAttribute('fence') === 'true' || FENCE_PAIRS[oc] === cc)
-          return omDelim(oc, cc, kids.slice(1, -1).map(c => omNode(c)).join(''));
+          return omDelim(oc, cc, omChildList(kids.slice(1, -1)));
       }
     }
     return omChildren(node);
@@ -205,7 +235,7 @@ window.CopyThatMath = (() => {
         '\u0302\u0303\u0304\u0306\u0307\u0308\u030C\u20D7^~'.includes(ot))
       return omAcc(ot, omNode(ch[0]));
     if ('\u00AF\u203E\u0305'.includes(ot)) return omBar('top', omNode(ch[0]));
-    return `<m:limUpp><m:limUppPr><m:ctrlPr/></m:limUppPr>` +
+    return `<m:limUpp>` +
       `<m:e>${omNode(ch[0])}</m:e><m:lim>${omNode(ch[1])}</m:lim></m:limUpp>`;
   }
 
@@ -214,11 +244,11 @@ window.CopyThatMath = (() => {
     const bt = ch[0].textContent.trim();
     if (getTag(ch[0]) === 'mo' && NARY_OPS.has(bt))
       return `<m:nary><m:naryPr><m:chr m:val="${escXml(bt)}"/>` +
-        `<m:limLoc m:val="undOvr"/><m:supHide m:val="1"/>` +
-        `<m:ctrlPr/></m:naryPr><m:sub>${omNode(ch[1])}</m:sub><m:sup/><m:e/></m:nary>`;
+        `<m:limLoc m:val="undOvr"/><m:supHide m:val="on"/>` +
+        `</m:naryPr><m:sub>${omNode(ch[1])}</m:sub><m:sup/><m:e/></m:nary>`;
     const ut = ch[1].textContent.trim();
     if ('_\u0332'.includes(ut)) return omBar('bot', omNode(ch[0]));
-    return `<m:limLow><m:limLowPr><m:ctrlPr/></m:limLowPr>` +
+    return `<m:limLow>` +
       `<m:e>${omNode(ch[0])}</m:e><m:lim>${omNode(ch[1])}</m:lim></m:limLow>`;
   }
 
@@ -227,10 +257,10 @@ window.CopyThatMath = (() => {
     const bt = ch[0].textContent.trim();
     if (getTag(ch[0]) === 'mo' && NARY_OPS.has(bt))
       return `<m:nary><m:naryPr><m:chr m:val="${escXml(bt)}"/>` +
-        `<m:limLoc m:val="undOvr"/><m:ctrlPr/></m:naryPr>` +
+        `<m:limLoc m:val="undOvr"/></m:naryPr>` +
         `<m:sub>${omNode(ch[1])}</m:sub><m:sup>${omNode(ch[2])}</m:sup><m:e/></m:nary>`;
-    return `<m:limUpp><m:limUppPr><m:ctrlPr/></m:limUppPr><m:e>` +
-      `<m:limLow><m:limLowPr><m:ctrlPr/></m:limLowPr>` +
+    return `<m:limUpp><m:e>` +
+      `<m:limLow>` +
       `<m:e>${omNode(ch[0])}</m:e><m:lim>${omNode(ch[1])}</m:lim></m:limLow>` +
       `</m:e><m:lim>${omNode(ch[2])}</m:lim></m:limUpp>`;
   }
@@ -238,7 +268,7 @@ window.CopyThatMath = (() => {
   function omMtable(node) {
     const rows = [...node.children].filter(n =>
       n.nodeType === 1 && ['mtr', 'mlabeledtr'].includes(getTag(n)));
-    return `<m:m><m:mPr><m:ctrlPr/></m:mPr>${rows.map(r => omMtr(r)).join('')}</m:m>`;
+    return `<m:m>${rows.map(r => omMtr(r)).join('')}</m:m>`;
   }
   function omMtr(node) {
     const cells = [...node.children].filter(n =>
@@ -377,7 +407,7 @@ window.CopyThatMath = (() => {
           if (peek() === '_') { adv(); sub = readToken(); skip(); }
           else { adv(); sup = readToken(); skip(); }
         }
-        return omNary(chr, sub, sup);
+        return omNary(chr, sub, sup, display ? 'undOvr' : 'subSup');
       }
 
       if (cmd === 'frac' || cmd === 'dfrac' || cmd === 'tfrac')
@@ -451,7 +481,7 @@ window.CopyThatMath = (() => {
         });
         return `<m:mr>${cells.map(c => `<m:e>${c}</m:e>`).join('')}</m:mr>`;
       });
-      let mat = `<m:m><m:mPr><m:ctrlPr/></m:mPr>${rows.join('')}</m:m>`;
+      let mat = `<m:m>${rows.join('')}</m:m>`;
 
       const d = matDelims[env];
       if (d) mat = omDelim(d[0] || '(', d[1] || ')', mat);
@@ -523,6 +553,13 @@ window.CopyThatMath = (() => {
         else if (sub) atom = omSub(atom, sub);
         else if (sup) atom = omSup(atom, sup);
 
+        if (atom.includes('<m:e/></m:nary>')) {
+          const body = parseExpr(term);
+          atom = atom.replace('<m:e/></m:nary>', `<m:e>${body}</m:e></m:nary>`);
+          result += atom;
+          return result;
+        }
+
         result += atom;
       }
       return result;
@@ -533,8 +570,7 @@ window.CopyThatMath = (() => {
 
   // ── Detection & wrapping ──────────────────────────────────────────
 
-  const WIKI_MATH_SELECTOR =
-    'img.mwe-math-fallback-image-inline, img.mwe-math-fallback-image-display';
+  const LATEX_ALT_RE = /\\[a-zA-Z]/;
 
   function stripDisplayStyle(tex) {
     const m = tex.match(/^\{\\(?:displaystyle|textstyle)\s+([\s\S]*)\}$/);
@@ -576,36 +612,29 @@ window.CopyThatMath = (() => {
       if (m) { results.push({ element: el, mathml: m, latex: null }); mark(el); }
     });
 
-    // 3. Wikipedia .mwe-math-element containers (contain both hidden MathML
-    //    and a visible <img>; we replace the whole container to avoid duplicates)
-    container.querySelectorAll('.mwe-math-element').forEach(el => {
-      if (isHandled(el)) return;
-      const isBlock = el.classList.contains('mwe-math-element-block');
-      const math = el.querySelector('math');
-      if (math) {
-        results.push({ element: el, mathml: math, latex: null, display: isBlock });
-        mark(el);
-        return;
-      }
-      const img = el.querySelector(WIKI_MATH_SELECTOR);
-      if (img) {
-        const tex = stripDisplayStyle((img.getAttribute('alt') || '').trim());
-        if (tex) {
-          results.push({ element: el, mathml: null, latex: tex, display: isBlock });
-          mark(el);
+    // 3. Native <math> elements — also detects when a renderer pairs hidden
+    //    MathML with a visible duplicate (SVG text in Google AI Overview,
+    //    fallback <img> in Wikipedia, etc.) and replaces the whole container.
+    container.querySelectorAll('math').forEach(m => {
+      if (isHandled(m)) return;
+      let wrapper = null;
+      for (let el = m.parentElement; el && el !== container; el = el.parentElement) {
+        if (el.querySelector(':scope > svg text')) { wrapper = el; break; }
+        const img = el.querySelector(':scope > img[alt]');
+        if (img && LATEX_ALT_RE.test(img.getAttribute('alt'))) {
+          wrapper = el; break;
         }
       }
-    });
-
-    // 4. Native MathML not already inside a handled container
-    container.querySelectorAll('math').forEach(m => {
-      if (!isHandled(m)) {
+      if (wrapper) {
+        results.push({ element: wrapper, mathml: m, latex: null });
+        mark(wrapper);
+      } else {
         results.push({ element: m, mathml: m, latex: null });
         mark(m);
       }
     });
 
-    // 5. LaTeX via data-math attribute (KaTeX HTML-only or custom renderers)
+    // 4. LaTeX via data-math attribute (KaTeX HTML-only or custom renderers)
     container.querySelectorAll('[data-math]').forEach(el => {
       if (handled.has(el)) return;
       const tex = el.getAttribute('data-math');
@@ -617,13 +646,15 @@ window.CopyThatMath = (() => {
       }
     });
 
-    // 6. Standalone Wikipedia math images outside .mwe-math-element
-    container.querySelectorAll(WIKI_MATH_SELECTOR).forEach(img => {
+    // 5. Standalone math images whose alt text contains LaTeX (e.g. Wikipedia
+    //    fallback images not paired with a <math> element)
+    container.querySelectorAll('img[alt]').forEach(img => {
       if (isHandled(img)) return;
-      const tex = stripDisplayStyle((img.getAttribute('alt') || '').trim());
+      const alt = (img.getAttribute('alt') || '').trim();
+      if (!alt || !LATEX_ALT_RE.test(alt)) return;
+      const tex = stripDisplayStyle(alt);
       if (tex) {
-        const isBlock = img.classList.contains('mwe-math-fallback-image-display');
-        results.push({ element: img, mathml: null, latex: tex, display: isBlock });
+        results.push({ element: img, mathml: null, latex: tex });
         handled.add(img);
       }
     });
@@ -639,8 +670,19 @@ window.CopyThatMath = (() => {
       '<body>' + bodyContent + '</body></html>';
   }
 
+  function stripInvisible(s) {
+    return s.replace(INVISIBLE, '');
+  }
+
+  function mathText(mathEl) {
+    const sem = mathEl.querySelector('semantics');
+    if (sem && sem.children[0]) return sem.children[0].textContent || '';
+    return mathEl.textContent || '';
+  }
+
   return {
     escXml, mathMLtoOMML, latexToOMML,
     findMathElements, buildMsOfficeHtml,
+    stripInvisible, mathText,
   };
 })();

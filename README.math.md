@@ -85,7 +85,7 @@ there is no sanitisation-free alternative in the Async Clipboard API yet.
 ## How math is detected — `findMathElements()`
 
 The detection runs against a temporary DOM created from the clicked element's
-`innerHTML`. It checks six sources in priority order:
+`innerHTML`. It checks five sources in priority order:
 
 ### 1. KaTeX with MathML
 
@@ -120,9 +120,47 @@ swapped for OMML.
 Same idea: we find the `<math>` inside `<mjx-container>` and use the MathML →
 OMML converter.
 
-### 3. Native MathML
+### 3. Native `<math>` with structural duplicate detection
 
-Bare `<math>` elements not already handled by cases 1 or 2.
+This is the main catch-all pass. It finds every `<math>` element not already
+handled by passes 1 or 2, then decides whether to replace just the `<math>` or a
+larger container.
+
+**Why containers matter.** Many renderers pair a hidden `<math>` element (for
+accessibility or copy-paste) with a visible duplicate that the user actually
+sees:
+
+| Renderer            | Hidden MathML                                   | Visible duplicate            |
+|---------------------|-------------------------------------------------|------------------------------|
+| Google AI Overview  | `<math>` inside a `<div style="opacity:0.001">` | Sibling `<svg>` with `<text>` elements |
+| Wikipedia           | `<math>` in `<span style="display:none">`       | Sibling `<img>` with LaTeX `alt` text  |
+
+If we only replaced the `<math>`, the visible duplicate would remain in the
+clipboard HTML — showing as garbled SVG text characters or a broken image.
+
+**Structural detection.** Rather than hard-coding site-specific CSS classes or
+data attributes (which break when sites redesign), the pass walks up from each
+`<math>` element looking for a **parent that also contains a visible duplicate**
+as a direct child:
+
+```
+for (let el = m.parentElement; el && el !== container; el = el.parentElement) {
+  // SVG with text elements → Google AI Overview pattern
+  if (el.querySelector(':scope > svg text')) { wrapper = el; break; }
+  // IMG with LaTeX alt text → Wikipedia pattern
+  const img = el.querySelector(':scope > img[alt]');
+  if (img && LATEX_ALT_RE.test(img.getAttribute('alt'))) { wrapper = el; break; }
+}
+```
+
+`LATEX_ALT_RE` (`/\\[a-zA-Z]/`) matches any `alt` text that contains a LaTeX
+command like `\displaystyle`, `\frac`, `\sqrt`, etc. This is a strong structural
+signal without depending on any site's class naming conventions.
+
+When a wrapper is found, the **entire container** is replaced by the OMML
+placeholder — removing both the hidden MathML and the visible duplicate in one
+operation. When no wrapper is found, just the `<math>` element itself is
+replaced (the plain native MathML case, e.g. ArXiv).
 
 ### 4. LaTeX source via `data-math` attribute (fallback)
 
@@ -145,38 +183,27 @@ Block-level equations are detected by the presence of `class="math-block"` or a
 `.katex-display` child, and are wrapped in `<m:oMathPara>` (display mode)
 instead of plain `<m:oMath>` (inline).
 
-### 5. Wikipedia `.mwe-math-element` containers
+### 5. Standalone math images with LaTeX alt text
 
-Wikipedia wraps each equation in a container like:
+A safety-net pass for `<img>` elements whose `alt` text contains LaTeX commands
+(detected by `LATEX_ALT_RE`). This catches cases where a renderer provides only
+an image with LaTeX in its `alt` attribute, without a paired `<math>` element —
+for example, Wikipedia fallback images on wikis that disable MathML output, or
+other sites that render math to images server-side.
 
-```
-<span class="mwe-math-element mwe-math-element-inline">
-  <span class="mwe-math-mathml-inline mwe-math-mathml-a11y" style="display: none;">
-    <math xmlns="http://www.w3.org/1998/Math/MathML">...</math>
-  </span>
-  <img class="mwe-math-fallback-image-inline"
-       alt="{\displaystyle E=mc^{2}}" src="...">
-</span>
-```
+The `alt` text is often wrapped in `{\displaystyle ...}`, which
+`stripDisplayStyle()` removes before parsing. The LaTeX → OMML parser handles
+the rest.
 
-The container has **both** a hidden `<math>` element (for screen-reader
-accessibility) and a visible `<img>` fallback (the rendered SVG/PNG). If we
-detected these independently, every equation would appear twice in the output.
+### Direct click on void elements (content.js)
 
-This pass finds `.mwe-math-element` containers and replaces the **whole
-container** as a single unit. It prefers the `<math>` element (MathML → OMML
-path, higher fidelity) and falls back to extracting LaTeX from the `<img>` `alt`
-attribute if no `<math>` is present. The `alt` text is typically wrapped in
-`{\displaystyle ...}`, which `stripDisplayStyle()` removes before parsing.
-Display vs inline is determined by `mwe-math-element-block` on the container.
-
-### 6. Standalone Wikipedia math images
-
-A safety-net pass for `img.mwe-math-fallback-image-inline` /
-`img.mwe-math-fallback-image-display` elements that are **not** inside a
-`.mwe-math-element` container (e.g. other MediaWiki-based wikis with different
-markup). Same logic as above: strip `{\displaystyle ...}`, convert via LaTeX →
-OMML.
+When the user clicks directly on a void element like `<img>` (which has no
+`innerHTML`), `content.js` checks the element's `alt` attribute for LaTeX
+commands before falling back to DOM traversal. If LaTeX is found, the alt text
+is converted directly via `latexToOMML()` in display mode, bypassing the
+`findMathElements()` pipeline entirely. This avoids duplicate detection issues
+that arise when walking up to a parent that contains both a hidden `<math>` and
+the visible `<img>`.
 
 ---
 
@@ -192,11 +219,11 @@ OMML equivalent. The mapping:
 | `<mn>`                | `<m:r>`               | Numbers, no style override                     |
 | `<mo>`                | `<m:r>`               | Operators, no style override                   |
 | `<mtext>`             | `<m:r>` style `"p"`   | Upright text                                   |
-| `<msub>`              | `<m:sSub>`            | N-ary operators (∑, ∫, etc.) become `<m:nary>` instead |
-| `<msup>`              | `<m:sSup>`            | Same n-ary check                               |
-| `<msubsup>`           | `<m:sSubSup>`         | Same n-ary check                               |
+| `<msub>`              | `<m:sSub>`            | N-ary operators (∑, ∫, etc.) become `<m:nary>`; remaining siblings collected as body |
+| `<msup>`              | `<m:sSup>`            | Same n-ary check + body collection             |
+| `<msubsup>`           | `<m:sSubSup>`         | Same n-ary check + body collection             |
 | `<mfrac>`             | `<m:f>`               | `<m:num>` and `<m:den>`                        |
-| `<msqrt>`             | `<m:rad>` (deg hidden) |                                                |
+| `<msqrt>`             | `<m:rad>` (deg hidden) | `<m:degHide m:val="on"/>` — "on" not "1" for OneNote compatibility |
 | `<mroot>`             | `<m:rad>` with `<m:deg>` | Degree is second child                      |
 | `<mfenced>`           | `<m:d>`               | Reads `open`, `close`, `separators` attributes |
 | `<mrow>` with fences  | `<m:d>`               | Detected when first/last child `<mo>` has `fence="true"` or matched pair in `FENCE_PAIRS` |
@@ -236,7 +263,7 @@ directly (without an intermediate MathML step).
 | `\text{...}`, `\mathrm{...}`, etc.  | `<m:r>` upright     |
 | `\hat{x}`, `\vec{v}`, `\dot{q}`     | `<m:acc>`           |
 | `\overline{x}`, `\underline{x}`     | `<m:bar>`           |
-| `\sum_{}^{}`, `\int`, `\prod`       | `<m:nary>`          |
+| `\sum_{}^{}`, `\int`, `\prod`       | `<m:nary>` with body collection (see below) |
 | `\left( ... \right)`                | `<m:d>`             |
 | `\begin{pmatrix}...\end{pmatrix}`   | `<m:m>` + `<m:d>`   |
 | `\begin{cases}...\end{cases}`       | `<m:m>` + `<m:d>` with `{` |
@@ -249,9 +276,21 @@ string) and `pos` (the read cursor). Key internal functions:
 - **`parseExpr(terminator)`** — The main loop. Reads atoms until it hits the
   `terminator` character (e.g. `}`, `]`, or empty string for end-of-input).
   After each atom, checks for trailing `_` / `^` to attach sub/superscripts.
+  If the atom is a **nary operator** (contains the `<m:e/></m:nary>` marker),
+  `parseExpr` recursively parses the remaining expression as the nary body,
+  fills it into `<m:e>`, and returns. This mirrors the MathML walker's
+  `omChildList` behaviour. Scope is bounded by the current group terminator,
+  so `\left...\right` delimiters naturally limit the body of an inner nary.
 - **`handleCmd(cmd)`** — Dispatches a `\command` name. Checks the Greek, symbol,
   n-ary, fraction, sqrt, text, accent, delimiter, and environment tables in
   order. Falls back to emitting the command name as upright text.
+- **`omNary(chr, sub, sup, limLoc)`** — Builds the `<m:nary>` element.
+  Empty `sub` or `sup` arguments automatically emit `<m:subHide m:val="on"/>`
+  or `<m:supHide m:val="on"/>` so OneNote doesn't render empty placeholder
+  boxes.  The LaTeX parser passes `limLoc = 'undOvr'` in display mode (limits
+  above/below the operator) and `'subSup'` in inline mode.  MathML-walker
+  callers omit `limLoc`, defaulting to `'subSup'` (the MathML walker constructs
+  `undOvr` nary elements inline in `omMunder` / `omMunderover`).
 - **`readGroup()`** — Skips whitespace, reads `{...}` and returns the parsed
   OMML inside. The whitespace skip is important because LaTeX (and Wikipedia's
   alt text in particular) allows spaces between commands and their arguments,
@@ -308,7 +347,13 @@ They execute sequentially in the page's main world — `mathml-to-omml.js` sets
 
 ## Adding support for new math sources
 
-To handle a new rendering library (e.g. Temml, or a custom renderer):
+Many cases are handled automatically by the structural detection in pass 3.  If
+a renderer outputs a `<math>` element paired with a visible duplicate (`<svg>`
+with `<text>`, or `<img>` with LaTeX `alt`), it will be detected and handled
+without any code changes.
+
+For renderers that don't fit the existing patterns (e.g. Temml, or a custom
+renderer with a non-standard structure):
 
 1. **In `findMathElements()`**, add a new `querySelectorAll` pass before the
    `[data-math]` fallback. Check for the library's container element, extract
@@ -317,6 +362,10 @@ To handle a new rendering library (e.g. Temml, or a custom renderer):
    converter) or `{ latex: "..." }` (to use the LaTeX parser).
 3. Call `mark()` on both the found element and its `[data-math]` ancestor (if
    any) so the later passes don't double-process it.
+
+Prefer structural detection (DOM relationships, sibling element types) over
+site-specific CSS class names or data attributes, which are fragile and break
+when sites redesign.
 
 To handle new LaTeX commands:
 
