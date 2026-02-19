@@ -6,7 +6,7 @@ chrome.action.onClicked.addListener(async (tab) => {
       // Inject the content script using the MV3 API: chrome.scripting.executeScript
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        files: ['content.js']
+        files: ['mathml-to-omml.js', 'content.js']
       });
       console.log("Copy That script injected.");
     } catch (err) {
