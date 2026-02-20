@@ -12,7 +12,7 @@ function loadCopyThatMath() {
     url: 'http://localhost',
   });
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'mathml-to-omml.js'), 'utf-8');
+    path.join(__dirname, '..', 'src', 'mathml-to-omml.js'), 'utf-8');
   const context = vm.createContext(dom.window);
   vm.runInContext(code, context);
   return {
