@@ -4,8 +4,9 @@
       console.log("Copy That is already active. Click an element or press Esc.");
       return;
     }
-    const { copyMode: stored } = await chrome.storage.local.get({ copyMode: 'text' });
+    const { copyMode: stored, fixSingleCharEquations } = await chrome.storage.local.get({ copyMode: 'text', fixSingleCharEquations: false });
     const copyMode = stored === 'html' ? 'html' : 'text';
+    const usePlainCharForSingleEquation = !!fixSingleCharEquations;
     window.elementTextCopierActive = true;
     console.log("Copy That activated (" + copyMode + " mode). Hover and click an element. Shift+click toggles mode for one click.");
   
@@ -20,6 +21,14 @@
     function wrapEquation(omml, fallbackText) {
       return `<!--[if gte msEquation 12]>${omml}<![endif]-->` +
         `<![if !msEquation]><span>${escXml(fallbackText)}</span><![endif]>`;
+    }
+
+    // When option is on, single-char equations become plain text to avoid OneNote/Graph API <br /> bug
+    function equationOrPlainChar(omml, fallbackText) {
+      if (usePlainCharForSingleEquation && fallbackText.length === 1) {
+        return escXml(fallbackText);
+      }
+      return wrapEquation(omml, fallbackText);
     }
 
     // --- Event Handlers ---
@@ -57,6 +66,12 @@
       const mathAncestor = targetElement.closest(
         'mjx-container, .katex, math, .mwe-math-element');
       if (mathAncestor) targetElement = mathAncestor;
+      // KaTeX HTML-only (no .katex-mathml) keeps LaTeX in a [data-math] ancestor.
+      // Use that element as the copy root so findMathElements sees the attribute.
+      if (isHtmlMode && targetElement.closest) {
+        const dataMathEl = targetElement.closest('[data-math]');
+        if (dataMathEl) targetElement = dataMathEl;
+      }
 
       // Void/empty elements (img, br, hr, input…) have no innerHTML.
       // If the element carries math in an attribute (e.g. img alt with LaTeX),
@@ -76,14 +91,18 @@
 
       if (isHtmlMode) {
         let textFallback = targetElement.innerText;
-        let htmlToCopy = altMathTex ? '' : targetElement.innerHTML;
+        // Use outerHTML when root has data-math so the parsed fragment contains
+        // that element and findMathElements can find it (KaTeX HTML-only mode).
+        const copyRootHtml = (targetElement.hasAttribute && targetElement.hasAttribute('data-math'))
+          ? targetElement.outerHTML : targetElement.innerHTML;
+        let htmlToCopy = altMathTex ? '' : copyRootHtml;
         let mathHandled = false;
 
         if (altMathTex) {
           try {
             const tex = stripDisplayStyle(altMathTex);
             const omml = latexToOMML(tex, true);
-            const eq = wrapEquation(omml, tex);
+            const eq = equationOrPlainChar(omml, tex);
             htmlToCopy = buildMsOfficeHtml(stripInvisible(eq));
             textFallback = tex;
             mathHandled = true;
@@ -96,7 +115,7 @@
             const omml = mathMLtoOMML(targetElement);
             const text = mathText(targetElement);
             const isBlock = targetElement.getAttribute('display') === 'block';
-            const eq = wrapEquation(omml, text);
+            const eq = equationOrPlainChar(omml, text);
             htmlToCopy = buildMsOfficeHtml(stripInvisible(isBlock ? `<br>${eq}<br>` : ` ${eq} `));
             textFallback = text;
             mathHandled = true;
@@ -124,7 +143,7 @@
             });
             let body = tc.innerHTML;
             for (const { ph, omml, text, display } of reps) {
-              const eq = wrapEquation(omml, text);
+              const eq = equationOrPlainChar(omml, text);
               body = body.replace(ph, display ? `<br>${eq}<br>` : ` ${eq} `);
             }
             body = stripInvisible(body);
@@ -133,7 +152,7 @@
           }
         } catch (e) {
           console.warn('OMML conversion failed, using raw HTML:', e);
-          htmlToCopy = targetElement.innerHTML;
+          htmlToCopy = copyRootHtml;
         }
 
         if (htmlToCopy) {

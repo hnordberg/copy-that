@@ -1,6 +1,19 @@
 (function () {
+  const checkbox = document.getElementById('fix-single-char-equations');
+
+  chrome.storage.local.get({ fixSingleCharEquations: false }, (st) => {
+    checkbox.checked = !!st.fixSingleCharEquations;
+  });
+
+  checkbox.addEventListener('change', () => {
+    chrome.storage.local.set({ fixSingleCharEquations: checkbox.checked });
+  });
+
   async function activate(mode) {
-    await chrome.storage.local.set({ copyMode: mode });
+    await chrome.storage.local.set({
+      copyMode: mode,
+      fixSingleCharEquations: checkbox.checked
+    });
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab?.id && tab.url && (tab.url.startsWith('http') || tab.url.startsWith('file'))) {
       try {
