@@ -1,9 +1,11 @@
 {
   "private": true,
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "build": "node build.js"
   },
   "devDependencies": {
+    "archiver": "7.0.1",
     "jsdom": "28.1.0"
   }
 }

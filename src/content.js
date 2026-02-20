@@ -1,11 +1,13 @@
-(() => {
+(async () => {
     // Prevent running multiple instances if injected multiple times accidentally
     if (window.elementTextCopierActive) {
       console.log("Copy That is already active. Click an element or press Esc.");
       return;
     }
+    const { copyMode: stored } = await chrome.storage.local.get({ copyMode: 'text' });
+    const copyMode = stored === 'html' ? 'html' : 'text';
     window.elementTextCopierActive = true;
-    console.log("Copy That activated. Hover and click an element.");
+    console.log("Copy That activated (" + copyMode + " mode). Hover and click an element. Shift+click toggles mode for one click.");
   
     let lastHighlightedElement = null;
     const highlightStyle = 'outline: 2px solid red; cursor: pointer;';
@@ -47,7 +49,8 @@
       event.stopPropagation();
   
       let targetElement = event.target;
-      const isHtmlMode = event.shiftKey;
+      // Use stored mode; Shift+click inverts for this click only
+      const isHtmlMode = event.shiftKey ? (copyMode !== 'html') : (copyMode === 'html');
 
       // If clicked inside a math container's visual rendering, walk up so
       // the full equation is captured and findMathElements can detect it.
@@ -150,7 +153,7 @@
             document.execCommand('copy');
             document.removeEventListener('copy', copyHandler);
             sel.removeAllRanges();
-            console.log('HTML copied to clipboard.');
+            console.log('HTML copied to clipboard. First 100 characters:', htmlToCopy.substring(0, 100));
             targetElement.style.cssText += successStyle;
             setTimeout(() => {
               if (targetElement) targetElement.style.outline = '';
@@ -170,7 +173,7 @@
         if (textToCopy) {
           navigator.clipboard.writeText(textToCopy)
             .then(() => {
-              console.log('innerText copied to clipboard:', textToCopy);
+              console.log('innerText copied to clipboard. First 100 characters:', textToCopy.substring(0, 100));
               targetElement.style.cssText += successStyle;
               setTimeout(() => {
                 if (targetElement) {
@@ -227,4 +230,4 @@
     document.body.addEventListener('click', handleClick, true);
     document.addEventListener('keydown', handleKeyDown, true);
   
-  })(); // IIFE
+  })();
