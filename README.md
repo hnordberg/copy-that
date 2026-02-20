@@ -45,7 +45,7 @@ A Firefox / Chrome extension that allows you to copy text or HTML from any eleme
 - **Background Script**: Handles extension icon clicks and script injection
 - **Clipboard API**: Uses `clipboardData.setData` in HTML mode (to preserve OMML markup) and `navigator.clipboard` for plain text
 - **MS Equation (OMML)**: Detects MathML from KaTeX (`.katex-mathml`), MathJax v3 (`mjx-container`), native `<math>` elements, and Wikipedia math images (`img.mwe-math-fallback-image-*`), converting them to Office Math Markup Language wrapped in `<!--[if gte msEquation 12]>` conditional comments
-
+- **OneNote Graph API**: There is a bug in the OneNote Graph API that causes single-character equations to be rendered as plain text. This is fixed by the `fixSingleCharEquations` option. This has been [reported](https://feedbackportal.microsoft.com/feedback/idea/241e8184-ae0e-f111-83da-7c1e52ac2057) to Microsoft.
 ## Browser Compatibility
 
 This extension is designed for Firefox, Chrome and other Chromium-based browsers that support Manifest V3.
