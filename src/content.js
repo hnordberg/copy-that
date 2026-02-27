@@ -8,11 +8,10 @@
     const copyMode = stored === 'html' ? 'html' : 'text';
     const usePlainCharForSingleEquation = !!fixSingleCharEquations;
     window.elementTextCopierActive = true;
-    console.log("Copy That activated (" + copyMode + " mode). Hover and click an element. Shift+click toggles mode for one click.");
+    console.log("Copy That activated (" + copyMode + " mode). Hover and click an element to copy.");
   
     let lastHighlightedElement = null;
     const highlightStyle = 'outline: 2px solid red; cursor: pointer;';
-    const highlightShiftStyle = 'outline: 2px solid blue; cursor: pointer;';
     const successStyle = 'outline: 2px solid limegreen;'; // Style after sending copy request
   
     const { escXml, mathMLtoOMML, latexToOMML, findMathElements, buildMsOfficeHtml,
@@ -40,7 +39,7 @@
         lastHighlightedElement.style.cursor = '';
       }
       // Apply highlight to the current element
-      event.target.style.cssText += event.shiftKey ? highlightShiftStyle : highlightStyle;
+      event.target.style.cssText += highlightStyle;
       lastHighlightedElement = event.target;
     }
   
@@ -58,8 +57,7 @@
       event.stopPropagation();
   
       let targetElement = event.target;
-      // Use stored mode; Shift+click inverts for this click only
-      const isHtmlMode = event.shiftKey ? (copyMode !== 'html') : (copyMode === 'html');
+      const isHtmlMode = copyMode === 'html';
 
       // If clicked inside a math container's visual rendering, walk up so
       // the full equation is captured and findMathElements can detect it.
