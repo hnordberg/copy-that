@@ -11,7 +11,7 @@
         }
     },
     "name": "Copy That",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "description": "Click an element on the page to copy it to the clipboard. Math is converted to OMML for native rendering in Word.",
     "permissions": [
         "activeTab",
