@@ -26,7 +26,12 @@
     },
     "action": {
         "default_title": "Activate Copy That",
-        "default_popup": "popup.html"
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "images/icon16.png",
+            "32": "images/icon48.png",
+            "48": "images/icon48.png"
+        }
     },
     "icons": {
         "16": "images/icon16.png",
