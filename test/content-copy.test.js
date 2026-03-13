@@ -131,6 +131,20 @@ describe('content clipboard output modes', () => {
     assert.match(clip['text/plain'], /\\\(x\\\)/);
   });
 
+  it('MathML mode writes only text/plain', async () => {
+    const h = createHarness('<math id="m"><mi>x</mi></math>');
+    h.storageState.mathMode = 'mathml';
+    await h.injectContent();
+
+    h.click('#m');
+    const clip = h.getClipboardData();
+
+    assert.equal(typeof clip['text/plain'], 'string');
+    assert.equal(clip['text/html'], undefined);
+    assert.match(clip['text/plain'], /<math[^>]*>/);
+    assert.match(clip['text/plain'], /<\/math>/);
+  });
+
   it('LaTeX text output never leaks math placeholders', async () => {
     const h = createHarness(
       '<div id="box"><math><mi>x</mi></math><span>+</span><math><mi>y</mi></math></div>'
@@ -145,6 +159,21 @@ describe('content clipboard output modes', () => {
     assert.doesNotMatch(clip['text/plain'], /___MATH_PH_\d+___/);
     assert.match(clip['text/plain'], /\\\(x\\\)/);
     assert.match(clip['text/plain'], /\\\(y\\\)/);
+  });
+
+  it('MathML text output never leaks math placeholders', async () => {
+    const h = createHarness(
+      '<div id="box"><math><mi>x</mi></math><span>+</span><math><mi>y</mi></math></div>'
+    );
+    h.storageState.mathMode = 'mathml';
+    await h.injectContent();
+
+    h.click('#box');
+    const clip = h.getClipboardData();
+
+    assert.equal(typeof clip['text/plain'], 'string');
+    assert.doesNotMatch(clip['text/plain'], /___MATH_PH_\d+___/);
+    assert.match(clip['text/plain'], /<math[^>]*>/);
   });
 
   it('re-injection while active applies updated math mode', async () => {

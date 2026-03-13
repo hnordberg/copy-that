@@ -5,6 +5,7 @@
   const startCopyButton = document.getElementById('start-copy');
   const mathOmmlRadio = document.getElementById('math-omml');
   const mathLatexRadio = document.getElementById('math-latex');
+  const mathMathmlRadio = document.getElementById('math-mathml');
 
   chrome.storage.local.get(
     { fixSingleCharEquations: false, copyMode: 'text', mathMode: 'omml' },
@@ -14,8 +15,10 @@
       copyHtmlRadio.checked = isHtml;
       copyTextRadio.checked = !isHtml;
       const isLatexMath = st.mathMode === 'latex';
+      const isMathMlMath = st.mathMode === 'mathml';
       mathLatexRadio.checked = isLatexMath;
-      mathOmmlRadio.checked = !isLatexMath;
+      mathMathmlRadio.checked = isMathMlMath;
+      mathOmmlRadio.checked = !isLatexMath && !isMathMlMath;
     }
   );
 
@@ -24,7 +27,9 @@
   });
 
   function selectedMathMode() {
-    return mathLatexRadio.checked ? 'latex' : 'omml';
+    if (mathLatexRadio.checked) return 'latex';
+    if (mathMathmlRadio.checked) return 'mathml';
+    return 'omml';
   }
 
   function saveMathMode() {
@@ -74,6 +79,10 @@
 
   mathLatexRadio.addEventListener('change', () => {
     if (mathLatexRadio.checked) saveMathMode();
+  });
+
+  mathMathmlRadio.addEventListener('change', () => {
+    if (mathMathmlRadio.checked) saveMathMode();
   });
 
   // Clicking the already-selected option activates with that mode

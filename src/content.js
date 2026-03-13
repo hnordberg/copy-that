@@ -18,7 +18,9 @@
       mathMode: 'omml'
     });
     const copyMode = stored === 'html' ? 'html' : 'text';
-    const mathMode = storedMathMode === 'latex' ? 'latex' : 'omml';
+    const mathMode = ['omml', 'latex', 'mathml'].includes(storedMathMode)
+      ? storedMathMode
+      : 'omml';
     const usePlainCharForSingleEquation = !!fixSingleCharEquations;
     window.elementTextCopierActive = true;
     console.log("Copy That activated (" + copyMode + ", math: " + mathMode + "). Hover and click an element to copy.");
@@ -45,6 +47,15 @@
 
     function wrapLatex(tex, display) {
       return display ? `\\[${tex}\\]` : `\\(${tex}\\)`;
+    }
+
+    function mathMLAsText(mathEl) {
+      if (!mathEl) return '';
+      let xml = new XMLSerializer().serializeToString(mathEl);
+      if (xml.startsWith('<math') && !/\sxmlns=/.test(xml)) {
+        xml = xml.replace('<math', '<math xmlns="http://www.w3.org/1998/Math/MathML"');
+      }
+      return stripInvisible(xml);
     }
 
     function htmlFragmentToText(html) {
@@ -112,6 +123,9 @@
 
       if (isHtmlMode) {
         const useLatexMath = mathMode === 'latex';
+        const useMathMlMath = mathMode === 'mathml';
+        const usePlainMath = useLatexMath || useMathMlMath;
+        const plainModeName = useLatexMath ? 'LaTeX' : 'MathML';
         let textFallback = targetElement.innerText;
         // Use outerHTML when root has data-math so the parsed fragment contains
         // that element and findMathElements can find it (KaTeX HTML-only mode).
@@ -125,19 +139,21 @@
             const tex = stripDisplayStyle(altMathTex);
             const eq = useLatexMath
               ? escXml(wrapLatex(tex, true))
-              : equationOrPlainChar(latexToOMML(tex, true), tex);
-            htmlToCopy = useLatexMath ? '' : buildMsOfficeHtml(stripInvisible(eq));
+              : useMathMlMath
+                ? escXml(tex)
+                : equationOrPlainChar(latexToOMML(tex, true), tex);
+            htmlToCopy = usePlainMath ? '' : buildMsOfficeHtml(stripInvisible(eq));
             textFallback = useLatexMath ? wrapLatex(tex, true) : tex;
             mathHandled = true;
             console.log(
-              useLatexMath
-                ? 'Math from element attribute, converted to LaTeX format.'
+              usePlainMath
+                ? `Math from element attribute, converted to ${plainModeName} format.`
                 : 'Math from element attribute, converted to MS Equation (OMML) format.'
             );
           } catch (e) {
             console.warn(
-              useLatexMath
-                ? 'LaTeX from alt attribute failed:'
+              usePlainMath
+                ? `${plainModeName} from alt attribute failed:`
                 : 'OMML from alt attribute failed:',
               e
             );
@@ -145,25 +161,28 @@
         } else if (targetElement.tagName && targetElement.tagName.toLowerCase() === 'math') {
           try {
             const latex = mathMLtoLaTeX(targetElement);
+            const mathml = mathMLAsText(targetElement);
             const text = latex || mathText(targetElement);
             const isBlock = targetElement.getAttribute('display') === 'block';
             const eq = useLatexMath
               ? escXml(wrapLatex(latex, isBlock))
-              : equationOrPlainChar(mathMLtoOMML(targetElement), text);
-            htmlToCopy = useLatexMath ? '' : buildMsOfficeHtml(
+              : useMathMlMath
+                ? escXml(mathml)
+                : equationOrPlainChar(mathMLtoOMML(targetElement), text);
+            htmlToCopy = usePlainMath ? '' : buildMsOfficeHtml(
               stripInvisible(isBlock ? `<br>${eq}<br>` : ` ${eq} `)
             );
-            textFallback = useLatexMath ? wrapLatex(latex, isBlock) : text;
+            textFallback = useLatexMath ? wrapLatex(latex, isBlock) : useMathMlMath ? mathml : text;
             mathHandled = true;
             console.log(
-              useLatexMath
-                ? 'Native MathML element, converted to LaTeX format.'
+              usePlainMath
+                ? `Native MathML element, converted to ${plainModeName} format.`
                 : 'Native MathML element, converted to MS Equation (OMML) format.'
             );
           } catch (e) {
             console.warn(
-              useLatexMath
-                ? 'LaTeX from MathML element failed:'
+              usePlainMath
+                ? `${plainModeName} from MathML element failed:`
                 : 'OMML from MathML element failed:',
               e
             );
@@ -180,13 +199,19 @@
               const isBlock = item.display ||
                 (item.mathml && item.mathml.getAttribute('display') === 'block');
               const latex = item.mathml ? mathMLtoLaTeX(item.mathml) : stripDisplayStyle(item.latex || '');
+              const mathml = item.mathml ? mathMLAsText(item.mathml) : '';
               const text = latex || (item.mathml ? mathText(item.mathml) : (item.latex || ''));
-              const html = useLatexMath
-                ? escXml(wrapLatex(latex, !!isBlock))
+              const plainMath = useLatexMath
+                ? wrapLatex(latex, !!isBlock)
+                : useMathMlMath
+                  ? (mathml || (item.latex || ''))
+                  : '';
+              const html = usePlainMath
+                ? escXml(plainMath)
                 : equationOrPlainChar(
-                    item.mathml ? mathMLtoOMML(item.mathml) : latexToOMML(latex, item.display),
-                    text
-                  );
+                  item.mathml ? mathMLtoOMML(item.mathml) : latexToOMML(latex, item.display),
+                  text
+                );
               reps.push({ ph, html, display: !!isBlock });
               item.element.parentNode.replaceChild(document.createTextNode(ph), item.element);
             });
@@ -195,35 +220,35 @@
               body = body.split(ph).join(display ? `<br>${html}<br>` : ` ${html} `);
             }
             body = stripInvisible(body);
-            htmlToCopy = useLatexMath ? '' : buildMsOfficeHtml(body);
-            if (useLatexMath) {
+            htmlToCopy = usePlainMath ? '' : buildMsOfficeHtml(body);
+            if (usePlainMath) {
               const textBody = body.replace(/___MATH_PH_\d+___/g, '');
               textFallback = htmlFragmentToText(textBody) || textFallback;
             }
             console.log(
-              useLatexMath
-                ? 'Math detected, converted to LaTeX format.'
+              usePlainMath
+                ? `Math detected, converted to ${plainModeName} format.`
                 : 'Math detected, converted to MS Equation (OMML) format.'
             );
           }
         } catch (e) {
           console.warn(
-            useLatexMath
-              ? 'LaTeX conversion failed, using raw HTML:'
+            usePlainMath
+              ? `${plainModeName} conversion failed, using raw HTML:`
               : 'OMML conversion failed, using raw HTML:',
             e
           );
           htmlToCopy = copyRootHtml;
         }
 
-        if (htmlToCopy || useLatexMath) {
+        if (htmlToCopy || usePlainMath) {
           try {
             const sel = window.getSelection();
             const selTarget = targetElement.firstChild ? targetElement : (targetElement.parentElement || targetElement);
             sel.selectAllChildren(selTarget);
             const copyHandler = (e) => {
               e.clipboardData.setData('text/plain', textFallback);
-              if (!useLatexMath) {
+              if (!usePlainMath) {
                 e.clipboardData.setData('text/html', htmlToCopy);
               }
               e.preventDefault();
@@ -235,12 +260,14 @@
             document.execCommand('copy');
             document.removeEventListener('copy', copyHandler);
             sel.removeAllRanges();
-            const payloadPreview = useLatexMath ? textFallback : htmlToCopy;
-            const payloadKind = useLatexMath ? 'Plain text' : 'HTML';
+            const payloadPreview = usePlainMath ? textFallback : htmlToCopy;
+            const payloadKind = usePlainMath ? 'Plain text' : 'HTML';
             console.log(payloadKind + ' copied to clipboard. First 100 characters:', payloadPreview.substring(0, 100));
-            targetElement.style.cssText += successStyle;
+            if (targetElement && targetElement.style) {
+              targetElement.style.cssText += successStyle;
+            }
             setTimeout(() => {
-              if (targetElement) targetElement.style.outline = '';
+              if (targetElement && targetElement.style) targetElement.style.outline = '';
             }, 2000);
           } catch (error) {
             console.error("Error copying HTML: ", error);

@@ -7,7 +7,7 @@ A Firefox / Chrome extension that allows you to copy text or HTML from any eleme
 - **Element Selection**: Click the extension icon to activate, then hover over any element to see it highlighted
 - **Plain Text Copy**: Choose "Copy Text" in the popup, then click an element to copy its `innerText` (plain text content)
 - **HTML Copy**: Choose "Copy HTML" in the popup, then click an element to copy its `innerHTML` as rich HTML (with plain text fallback)
-- **Math Output Modes**: Math equations (MathML, KaTeX, MathJax, Wikipedia) can be copied as MS Office Math Objects (OMML) or LaTeX plain text.
+- **Math Output Modes**: Math equations (MathML, KaTeX, MathJax, Wikipedia) can be copied as MS Office Math Objects (OMML), LaTeX plain text, or MathML plain text.
 - **Visual Feedback**: 
   - Outline on hover while selecting an element
   - Dialog to choose **HTML** or **Text** before copying
@@ -29,7 +29,7 @@ A Firefox / Chrome extension that allows you to copy text or HTML from any eleme
 1. Navigate to any webpage
 2. Click the "Copy That" extension icon in your browser toolbar
 3. Hover over elements on the page to see them highlighted
-4. In the popup, choose **Copy HTML** or **Copy Text**, choose **Math mode** (**Office Math Objects** or **LaTeX**), then click **Copy**
+4. In the popup, choose **Copy HTML** or **Copy Text**, choose **Math mode** (**Office Math Objects**, **LaTeX**, or **MathML**), then click **Copy**
 5. Click an element on the page to copy its content (HTML or plain text, depending on your choice)
 6. Press `Escape` to exit selection mode
 
@@ -46,6 +46,7 @@ A Firefox / Chrome extension that allows you to copy text or HTML from any eleme
 - **Math detection**: Detects MathML from KaTeX (`.katex-mathml`), MathJax v3 (`mjx-container`), native `<math>` elements, and Wikipedia math images (`img.mwe-math-fallback-image-*`)
 - **Office Math mode**: Converts detected math to Office Math Markup Language wrapped in `<!--[if gte msEquation 12]>` conditional comments
 - **LaTeX mode**: Converts detected math to LaTeX (or reuses source LaTeX when available) and writes `text/plain` clipboard data
+- **MathML mode**: Writes detected native MathML as `text/plain`; when only LaTeX source is available, uses that source as fallback text
 - **OneNote Graph API**: There is a bug in the OneNote Graph API that causes single-character equations to be rendered as plain text. This is fixed by the `fixSingleCharEquations` option. This has been [reported](https://feedbackportal.microsoft.com/feedback/idea/241e8184-ae0e-f111-83da-7c1e52ac2057) to Microsoft.
 ## Browser Compatibility
 
