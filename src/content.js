@@ -1,20 +1,33 @@
 (async () => {
     // Prevent running multiple instances if injected multiple times accidentally
     if (window.elementTextCopierActive) {
-      console.log("Copy That is already active. Click an element or press Esc.");
-      return;
+      if (typeof window.elementTextCopierCleanup === 'function') {
+        window.elementTextCopierCleanup();
+      } else {
+        console.log("Copy That is already active. Click an element or press Esc.");
+        return;
+      }
     }
-    const { copyMode: stored, fixSingleCharEquations } = await chrome.storage.local.get({ copyMode: 'text', fixSingleCharEquations: false });
+    const {
+      copyMode: stored,
+      fixSingleCharEquations,
+      mathMode: storedMathMode
+    } = await chrome.storage.local.get({
+      copyMode: 'text',
+      fixSingleCharEquations: false,
+      mathMode: 'omml'
+    });
     const copyMode = stored === 'html' ? 'html' : 'text';
+    const mathMode = storedMathMode === 'latex' ? 'latex' : 'omml';
     const usePlainCharForSingleEquation = !!fixSingleCharEquations;
     window.elementTextCopierActive = true;
-    console.log("Copy That activated (" + copyMode + " mode). Hover and click an element to copy.");
+    console.log("Copy That activated (" + copyMode + ", math: " + mathMode + "). Hover and click an element to copy.");
   
     let lastHighlightedElement = null;
     const highlightStyle = 'outline: 2px solid red; cursor: pointer;';
     const successStyle = 'outline: 2px solid limegreen;'; // Style after sending copy request
   
-    const { escXml, mathMLtoOMML, latexToOMML, findMathElements, buildMsOfficeHtml,
+    const { escXml, mathMLtoOMML, mathMLtoLaTeX, latexToOMML, findMathElements, buildMsOfficeHtml,
             stripInvisible, mathText, stripDisplayStyle } = window.CopyThatMath;
 
     function wrapEquation(omml, fallbackText) {
@@ -28,6 +41,16 @@
         return escXml(fallbackText);
       }
       return wrapEquation(omml, fallbackText);
+    }
+
+    function wrapLatex(tex, display) {
+      return display ? `\\[${tex}\\]` : `\\(${tex}\\)`;
+    }
+
+    function htmlFragmentToText(html) {
+      const doc = new DOMParser().parseFromString('<!doctype html><html><body></body></html>', 'text/html');
+      doc.body.innerHTML = html || '';
+      return doc.body.textContent || '';
     }
 
     // --- Event Handlers ---
@@ -88,6 +111,7 @@
       }
 
       if (isHtmlMode) {
+        const useLatexMath = mathMode === 'latex';
         let textFallback = targetElement.innerText;
         // Use outerHTML when root has data-math so the parsed fragment contains
         // that element and findMathElements can find it (KaTeX HTML-only mode).
@@ -99,27 +123,50 @@
         if (altMathTex) {
           try {
             const tex = stripDisplayStyle(altMathTex);
-            const omml = latexToOMML(tex, true);
-            const eq = equationOrPlainChar(omml, tex);
-            htmlToCopy = buildMsOfficeHtml(stripInvisible(eq));
-            textFallback = tex;
+            const eq = useLatexMath
+              ? escXml(wrapLatex(tex, true))
+              : equationOrPlainChar(latexToOMML(tex, true), tex);
+            htmlToCopy = useLatexMath ? '' : buildMsOfficeHtml(stripInvisible(eq));
+            textFallback = useLatexMath ? wrapLatex(tex, true) : tex;
             mathHandled = true;
-            console.log('Math from element attribute, converted to MS Equation (OMML) format.');
+            console.log(
+              useLatexMath
+                ? 'Math from element attribute, converted to LaTeX format.'
+                : 'Math from element attribute, converted to MS Equation (OMML) format.'
+            );
           } catch (e) {
-            console.warn('OMML from alt attribute failed:', e);
+            console.warn(
+              useLatexMath
+                ? 'LaTeX from alt attribute failed:'
+                : 'OMML from alt attribute failed:',
+              e
+            );
           }
         } else if (targetElement.tagName && targetElement.tagName.toLowerCase() === 'math') {
           try {
-            const omml = mathMLtoOMML(targetElement);
-            const text = mathText(targetElement);
+            const latex = mathMLtoLaTeX(targetElement);
+            const text = latex || mathText(targetElement);
             const isBlock = targetElement.getAttribute('display') === 'block';
-            const eq = equationOrPlainChar(omml, text);
-            htmlToCopy = buildMsOfficeHtml(stripInvisible(isBlock ? `<br>${eq}<br>` : ` ${eq} `));
-            textFallback = text;
+            const eq = useLatexMath
+              ? escXml(wrapLatex(latex, isBlock))
+              : equationOrPlainChar(mathMLtoOMML(targetElement), text);
+            htmlToCopy = useLatexMath ? '' : buildMsOfficeHtml(
+              stripInvisible(isBlock ? `<br>${eq}<br>` : ` ${eq} `)
+            );
+            textFallback = useLatexMath ? wrapLatex(latex, isBlock) : text;
             mathHandled = true;
-            console.log('Native MathML element, converted to MS Equation (OMML) format.');
+            console.log(
+              useLatexMath
+                ? 'Native MathML element, converted to LaTeX format.'
+                : 'Native MathML element, converted to MS Equation (OMML) format.'
+            );
           } catch (e) {
-            console.warn('OMML from MathML element failed:', e);
+            console.warn(
+              useLatexMath
+                ? 'LaTeX from MathML element failed:'
+                : 'OMML from MathML element failed:',
+              e
+            );
           }
         }
 
@@ -129,38 +176,56 @@
           if (mathItems.length > 0) {
             const reps = [];
             mathItems.forEach((item, i) => {
-              const ph = `___OMML_PH_${i}___`;
-              const omml = item.mathml
-                ? mathMLtoOMML(item.mathml)
-                : latexToOMML(item.latex, item.display);
-              const text = item.mathml ? mathText(item.mathml) : (item.latex || '');
+              const ph = `___MATH_PH_${i}___`;
               const isBlock = item.display ||
                 (item.mathml && item.mathml.getAttribute('display') === 'block');
-              reps.push({ ph, omml, text, display: !!isBlock });
+              const latex = item.mathml ? mathMLtoLaTeX(item.mathml) : stripDisplayStyle(item.latex || '');
+              const text = latex || (item.mathml ? mathText(item.mathml) : (item.latex || ''));
+              const html = useLatexMath
+                ? escXml(wrapLatex(latex, !!isBlock))
+                : equationOrPlainChar(
+                    item.mathml ? mathMLtoOMML(item.mathml) : latexToOMML(latex, item.display),
+                    text
+                  );
+              reps.push({ ph, html, display: !!isBlock });
               item.element.parentNode.replaceChild(document.createTextNode(ph), item.element);
             });
             let body = tc.innerHTML;
-            for (const { ph, omml, text, display } of reps) {
-              const eq = equationOrPlainChar(omml, text);
-              body = body.replace(ph, display ? `<br>${eq}<br>` : ` ${eq} `);
+            for (const { ph, html, display } of reps) {
+              body = body.split(ph).join(display ? `<br>${html}<br>` : ` ${html} `);
             }
             body = stripInvisible(body);
-            htmlToCopy = buildMsOfficeHtml(body);
-            console.log('Math detected, converted to MS Equation (OMML) format.');
+            htmlToCopy = useLatexMath ? '' : buildMsOfficeHtml(body);
+            if (useLatexMath) {
+              const textBody = body.replace(/___MATH_PH_\d+___/g, '');
+              textFallback = htmlFragmentToText(textBody) || textFallback;
+            }
+            console.log(
+              useLatexMath
+                ? 'Math detected, converted to LaTeX format.'
+                : 'Math detected, converted to MS Equation (OMML) format.'
+            );
           }
         } catch (e) {
-          console.warn('OMML conversion failed, using raw HTML:', e);
+          console.warn(
+            useLatexMath
+              ? 'LaTeX conversion failed, using raw HTML:'
+              : 'OMML conversion failed, using raw HTML:',
+            e
+          );
           htmlToCopy = copyRootHtml;
         }
 
-        if (htmlToCopy) {
+        if (htmlToCopy || useLatexMath) {
           try {
             const sel = window.getSelection();
             const selTarget = targetElement.firstChild ? targetElement : (targetElement.parentElement || targetElement);
             sel.selectAllChildren(selTarget);
             const copyHandler = (e) => {
-              e.clipboardData.setData('text/html', htmlToCopy);
               e.clipboardData.setData('text/plain', textFallback);
+              if (!useLatexMath) {
+                e.clipboardData.setData('text/html', htmlToCopy);
+              }
               e.preventDefault();
             };
             document.addEventListener('copy', copyHandler);
@@ -170,7 +235,9 @@
             document.execCommand('copy');
             document.removeEventListener('copy', copyHandler);
             sel.removeAllRanges();
-            console.log('HTML copied to clipboard. First 100 characters:', htmlToCopy.substring(0, 100));
+            const payloadPreview = useLatexMath ? textFallback : htmlToCopy;
+            const payloadKind = useLatexMath ? 'Plain text' : 'HTML';
+            console.log(payloadKind + ' copied to clipboard. First 100 characters:', payloadPreview.substring(0, 100));
             targetElement.style.cssText += successStyle;
             setTimeout(() => {
               if (targetElement) targetElement.style.outline = '';
@@ -235,6 +302,7 @@
       document.removeEventListener('keydown', handleKeyDown, true); // Use capture phase
   
       window.elementTextCopierActive = false; // Mark as inactive
+      window.elementTextCopierCleanup = null;
       console.log("Copy That deactivated.");
     }
   
@@ -246,5 +314,6 @@
     document.body.addEventListener('mouseout', handleMouseOut);
     document.body.addEventListener('click', handleClick, true);
     document.addEventListener('keydown', handleKeyDown, true);
+    window.elementTextCopierCleanup = cleanup;
   
   })();

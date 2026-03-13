@@ -8,14 +8,28 @@
 <body>
   <div class="panel">
     <p class="label">Copy selection as:</p>
+    <div class="copy-controls">
+      <button type="button" id="start-copy" class="copy-btn">Copy</button>
+      <div class="mode-radios">
+        <label class="radio-label">
+          <input type="radio" name="copy-mode" id="copy-html" value="html" />
+          HTML
+        </label>
+        <label class="radio-label">
+          <input type="radio" name="copy-mode" id="copy-text" value="text" />
+          Text
+        </label>
+      </div>
+    </div>
+    <p class="label section-label">Math mode:</p>
     <div class="mode-radios">
       <label class="radio-label">
-        <input type="radio" name="copy-mode" id="copy-html" value="html" />
-        HTML
+        <input type="radio" name="math-mode" id="math-omml" value="omml" />
+        Office Math Objects
       </label>
       <label class="radio-label">
-        <input type="radio" name="copy-mode" id="copy-text" value="text" />
-        Text
+        <input type="radio" name="math-mode" id="math-latex" value="latex" />
+        LaTeX
       </label>
     </div>
     <label class="checkbox-label">

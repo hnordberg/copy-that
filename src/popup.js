@@ -2,14 +2,20 @@
   const fixSingleCharCheckbox = document.getElementById('fix-single-char-equations');
   const copyHtmlRadio = document.getElementById('copy-html');
   const copyTextRadio = document.getElementById('copy-text');
+  const startCopyButton = document.getElementById('start-copy');
+  const mathOmmlRadio = document.getElementById('math-omml');
+  const mathLatexRadio = document.getElementById('math-latex');
 
   chrome.storage.local.get(
-    { fixSingleCharEquations: false, copyMode: 'text' },
+    { fixSingleCharEquations: false, copyMode: 'text', mathMode: 'omml' },
     (st) => {
       fixSingleCharCheckbox.checked = !!st.fixSingleCharEquations;
       const isHtml = st.copyMode === 'html';
       copyHtmlRadio.checked = isHtml;
       copyTextRadio.checked = !isHtml;
+      const isLatexMath = st.mathMode === 'latex';
+      mathLatexRadio.checked = isLatexMath;
+      mathOmmlRadio.checked = !isLatexMath;
     }
   );
 
@@ -17,10 +23,19 @@
     chrome.storage.local.set({ fixSingleCharEquations: fixSingleCharCheckbox.checked });
   });
 
+  function selectedMathMode() {
+    return mathLatexRadio.checked ? 'latex' : 'omml';
+  }
+
+  function saveMathMode() {
+    chrome.storage.local.set({ mathMode: selectedMathMode() });
+  }
+
   async function activate(mode) {
     await chrome.storage.local.set({
       copyMode: mode,
-      fixSingleCharEquations: fixSingleCharCheckbox.checked
+      fixSingleCharEquations: fixSingleCharCheckbox.checked,
+      mathMode: selectedMathMode()
     });
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab?.id && tab.url && (tab.url.startsWith('http') || tab.url.startsWith('file'))) {
@@ -47,6 +62,18 @@
 
   copyTextRadio.addEventListener('change', () => {
     if (copyTextRadio.checked) activate('text');
+  });
+
+  startCopyButton.addEventListener('click', () => {
+    activate(copyHtmlRadio.checked ? 'html' : 'text');
+  });
+
+  mathOmmlRadio.addEventListener('change', () => {
+    if (mathOmmlRadio.checked) saveMathMode();
+  });
+
+  mathLatexRadio.addEventListener('change', () => {
+    if (mathLatexRadio.checked) saveMathMode();
   });
 
   // Clicking the already-selected option activates with that mode

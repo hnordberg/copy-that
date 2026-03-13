@@ -280,6 +280,236 @@ window.CopyThatMath = (() => {
     return wrapOmath(omNode(mathEl), mathEl.getAttribute('display') === 'block');
   }
 
+  // ── MathML → LaTeX ────────────────────────────────────────────────
+
+  const LATEX_ESC_RE = /[\\{}$&#_%^~]/g;
+  const LATEX_ESC_MAP = {
+    '\\': '\\textbackslash{}',
+    '{': '\\{',
+    '}': '\\}',
+    '$': '\\$',
+    '&': '\\&',
+    '#': '\\#',
+    '_': '\\_',
+    '%': '\\%',
+    '^': '\\^{}',
+    '~': '\\~{}',
+  };
+
+  const OP_TO_LATEX = {
+    '≤': '\\leq', '≥': '\\geq', '≠': '\\neq', '≈': '\\approx', '≡': '\\equiv',
+    '∈': '\\in', '∉': '\\notin', '⊂': '\\subset', '⊃': '\\supset',
+    '⊆': '\\subseteq', '⊇': '\\supseteq', '∪': '\\cup', '∩': '\\cap',
+    '∨': '\\vee', '∧': '\\wedge', '→': '\\to', '←': '\\leftarrow',
+    '⇒': '\\Rightarrow', '⇐': '\\Leftarrow', '⇔': '\\Leftrightarrow',
+    '±': '\\pm', '∓': '\\mp', '×': '\\times', '÷': '\\div',
+    '·': '\\cdot', '∞': '\\infty', '∂': '\\partial', '∇': '\\nabla',
+    '∑': '\\sum', '∏': '\\prod', '∐': '\\coprod', '∫': '\\int',
+    '∬': '\\iint', '∭': '\\iiint', '∮': '\\oint',
+    '…': '\\ldots', '⋯': '\\cdots', '⋮': '\\vdots', '⋱': '\\ddots',
+    '∥': '\\Vert', '⟨': '\\langle', '⟩': '\\rangle',
+    '⌈': '\\lceil', '⌉': '\\rceil', '⌊': '\\lfloor', '⌋': '\\rfloor',
+  };
+
+  const ACCENT_TO_LATEX = {
+    '̂': 'hat', '̃': 'tilde', '⃗': 'vec', '̇': 'dot',
+    '̈': 'ddot', '̌': 'check', '̆': 'breve', '́': 'acute', '̀': 'grave',
+  };
+
+  const NARY_TO_LATEX = {
+    '∑': '\\sum', '∏': '\\prod', '∐': '\\coprod', '∫': '\\int',
+    '∬': '\\iint', '∭': '\\iiint', '∮': '\\oint',
+    '⋃': '\\bigcup', '⋂': '\\bigcap', '⋁': '\\bigvee', '⋀': '\\bigwedge',
+    '⨁': '\\bigoplus', '⨂': '\\bigotimes', '⨀': '\\bigodot',
+  };
+
+  function escLatexText(s) {
+    return (s || '').replace(LATEX_ESC_RE, ch => LATEX_ESC_MAP[ch] || ch);
+  }
+
+  function latexDelimChar(ch) {
+    if (!ch) return '.';
+    if (ch === '{') return '\\{';
+    if (ch === '}') return '\\}';
+    if (ch === '∥') return '\\Vert';
+    if (ch === '⟨') return '\\langle';
+    if (ch === '⟩') return '\\rangle';
+    if (ch === '⌈') return '\\lceil';
+    if (ch === '⌉') return '\\rceil';
+    if (ch === '⌊') return '\\lfloor';
+    if (ch === '⌋') return '\\rfloor';
+    return ch;
+  }
+
+  function latexOp(txt) {
+    if (!txt) return '';
+    if (OP_TO_LATEX[txt]) return OP_TO_LATEX[txt];
+    if (txt.length === 1) return txt;
+    return [...txt].map(ch => OP_TO_LATEX[ch] || ch).join('');
+  }
+
+  function latexChildren(node) {
+    let out = '';
+    for (const c of node.childNodes) out += latexNode(c);
+    return out;
+  }
+
+  function mathMLtoLaTeX(mathEl) {
+    const out = latexNode(mathEl).trim();
+    return out || mathText(mathEl);
+  }
+
+  function latexNode(node) {
+    if (!node) return '';
+    if (node.nodeType === 3) {
+      const t = node.textContent.replace(/\s+/g, ' ').trim();
+      return t ? escLatexText(t) : '';
+    }
+    if (node.nodeType !== 1) return '';
+    const tag = getTag(node);
+
+    switch (tag) {
+      case 'math':
+      case 'mpadded':
+      case 'mstyle':
+      case 'menclose':
+        return latexChildren(node);
+      case 'semantics': {
+        for (const child of node.children) {
+          if (getTag(child) !== 'annotation') continue;
+          const enc = (child.getAttribute('encoding') || '').toLowerCase();
+          if (enc.includes('tex')) return stripDisplayStyle((child.textContent || '').trim());
+        }
+        return node.children[0] ? latexNode(node.children[0]) : '';
+      }
+      case 'annotation':
+      case 'annotation-xml':
+      case 'mphantom':
+      case 'mspace':
+        return '';
+      case 'mrow': {
+        const kids = [...node.childNodes].filter(n =>
+          n.nodeType === 1 || (n.nodeType === 3 && (n.textContent || '').trim())
+        );
+        if (kids.length >= 2) {
+          const first = kids[0];
+          const last = kids[kids.length - 1];
+          if (first.nodeType === 1 && last.nodeType === 1 &&
+              getTag(first) === 'mo' && getTag(last) === 'mo') {
+            const open = (first.textContent || '').trim();
+            const close = (last.textContent || '').trim();
+            if (first.getAttribute('fence') === 'true' || FENCE_PAIRS[open] === close) {
+              let inner = '';
+              for (let i = 1; i < kids.length - 1; i++) inner += latexNode(kids[i]);
+              return `\\left${latexDelimChar(open)}${inner}\\right${latexDelimChar(close)}`;
+            }
+          }
+        }
+        return latexChildren(node);
+      }
+      case 'mi': {
+        const t = (node.textContent || '').trim();
+        if (!t) return '';
+        if (node.getAttribute('mathvariant') === 'normal' || t.length > 1)
+          return `\\mathrm{${escLatexText(t)}}`;
+        return escLatexText(t);
+      }
+      case 'mn':
+        return escLatexText((node.textContent || '').trim());
+      case 'mo':
+        return latexOp((node.textContent || '').trim());
+      case 'mtext':
+      case 'ms':
+        return `\\text{${escLatexText((node.textContent || '').trim())}}`;
+      case 'msub': {
+        const ch = [...node.children];
+        if (ch.length < 2) return latexChildren(node);
+        return `${latexNode(ch[0])}_{${latexNode(ch[1])}}`;
+      }
+      case 'msup': {
+        const ch = [...node.children];
+        if (ch.length < 2) return latexChildren(node);
+        return `${latexNode(ch[0])}^{${latexNode(ch[1])}}`;
+      }
+      case 'msubsup': {
+        const ch = [...node.children];
+        if (ch.length < 3) return latexChildren(node);
+        return `${latexNode(ch[0])}_{${latexNode(ch[1])}}^{${latexNode(ch[2])}}`;
+      }
+      case 'mfrac': {
+        const ch = [...node.children];
+        if (ch.length < 2) return latexChildren(node);
+        return `\\frac{${latexNode(ch[0])}}{${latexNode(ch[1])}}`;
+      }
+      case 'msqrt':
+        return `\\sqrt{${latexChildren(node)}}`;
+      case 'mroot': {
+        const ch = [...node.children];
+        if (ch.length < 2) return `\\sqrt{${latexChildren(node)}}`;
+        return `\\sqrt[${latexNode(ch[1])}]{${latexNode(ch[0])}}`;
+      }
+      case 'mfenced': {
+        const open = node.getAttribute('open') || '(';
+        const close = node.getAttribute('close') || ')';
+        const seps = (node.getAttribute('separators') || ',').replace(/\s/g, '');
+        const ch = [...node.children];
+        let inner = '';
+        ch.forEach((c, i) => {
+          if (i > 0) {
+            const sep = seps[Math.min(i - 1, seps.length - 1)] || ',';
+            inner += sep;
+          }
+          inner += latexNode(c);
+        });
+        return `\\left${latexDelimChar(open)}${inner}\\right${latexDelimChar(close)}`;
+      }
+      case 'mover': {
+        const ch = [...node.children];
+        if (ch.length < 2) return latexChildren(node);
+        const base = latexNode(ch[0]);
+        const accent = (ch[1].textContent || '').trim();
+        const accentCmd = ACCENT_TO_LATEX[accent];
+        if (accentCmd) return `\\${accentCmd}{${base}}`;
+        if ('¯‾̅'.includes(accent)) return `\\overline{${base}}`;
+        return `${base}^{${latexNode(ch[1])}}`;
+      }
+      case 'munder': {
+        const ch = [...node.children];
+        if (ch.length < 2) return latexChildren(node);
+        const baseText = (ch[0].textContent || '').trim();
+        const nary = getTag(ch[0]) === 'mo' ? NARY_TO_LATEX[baseText] : null;
+        if (nary) return `${nary}_{${latexNode(ch[1])}}`;
+        const under = (ch[1].textContent || '').trim();
+        if ('_̲'.includes(under)) return `\\underline{${latexNode(ch[0])}}`;
+        return `${latexNode(ch[0])}_{${latexNode(ch[1])}}`;
+      }
+      case 'munderover': {
+        const ch = [...node.children];
+        if (ch.length < 3) return latexChildren(node);
+        const baseText = (ch[0].textContent || '').trim();
+        const nary = getTag(ch[0]) === 'mo' ? NARY_TO_LATEX[baseText] : null;
+        if (nary) return `${nary}_{${latexNode(ch[1])}}^{${latexNode(ch[2])}}`;
+        return `${latexNode(ch[0])}_{${latexNode(ch[1])}}^{${latexNode(ch[2])}}`;
+      }
+      case 'mtable': {
+        const rows = [...node.children].filter(n =>
+          n.nodeType === 1 && ['mtr', 'mlabeledtr'].includes(getTag(n))
+        );
+        const body = rows.map(r => latexNode(r)).join(' \\\\ ');
+        return `\\begin{matrix}${body}\\end{matrix}`;
+      }
+      case 'mtr':
+      case 'mlabeledtr': {
+        const cells = [...node.children].filter(n => n.nodeType === 1 && getTag(n) === 'mtd');
+        return cells.map(c => latexNode(c)).join(' & ');
+      }
+      case 'mtd':
+        return latexChildren(node);
+      default:
+        return latexChildren(node);
+    }
+  }
+
   // ── LaTeX → OMML ──────────────────────────────────────────────────
 
   const GREEK = {
@@ -688,7 +918,7 @@ window.CopyThatMath = (() => {
   }
 
   return {
-    escXml, mathMLtoOMML, latexToOMML,
+    escXml, mathMLtoOMML, mathMLtoLaTeX, latexToOMML,
     findMathElements, buildMsOfficeHtml,
     stripInvisible, stripDisplayStyle, mathText,
   };

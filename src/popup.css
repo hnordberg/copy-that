@@ -14,6 +14,38 @@ body {
   color: #333;
 }
 
+.section-label {
+  margin-top: 12px;
+}
+
+.copy-controls {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.copy-btn {
+  border: 1px solid #2d6cdf;
+  background: #2d6cdf;
+  color: #fff;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.copy-btn:hover {
+  background: #255bc0;
+  border-color: #255bc0;
+}
+
+.copy-btn:active {
+  background: #1e4b9c;
+  border-color: #1e4b9c;
+}
+
 .mode-radios {
   display: flex;
   flex-direction: column;
