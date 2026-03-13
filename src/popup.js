@@ -1,18 +1,26 @@
 (function () {
-  const checkbox = document.getElementById('fix-single-char-equations');
+  const fixSingleCharCheckbox = document.getElementById('fix-single-char-equations');
+  const copyHtmlRadio = document.getElementById('copy-html');
+  const copyTextRadio = document.getElementById('copy-text');
 
-  chrome.storage.local.get({ fixSingleCharEquations: false }, (st) => {
-    checkbox.checked = !!st.fixSingleCharEquations;
-  });
+  chrome.storage.local.get(
+    { fixSingleCharEquations: false, copyMode: 'text' },
+    (st) => {
+      fixSingleCharCheckbox.checked = !!st.fixSingleCharEquations;
+      const isHtml = st.copyMode === 'html';
+      copyHtmlRadio.checked = isHtml;
+      copyTextRadio.checked = !isHtml;
+    }
+  );
 
-  checkbox.addEventListener('change', () => {
-    chrome.storage.local.set({ fixSingleCharEquations: checkbox.checked });
+  fixSingleCharCheckbox.addEventListener('change', () => {
+    chrome.storage.local.set({ fixSingleCharEquations: fixSingleCharCheckbox.checked });
   });
 
   async function activate(mode) {
     await chrome.storage.local.set({
       copyMode: mode,
-      fixSingleCharEquations: checkbox.checked
+      fixSingleCharEquations: fixSingleCharCheckbox.checked
     });
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab?.id && tab.url && (tab.url.startsWith('http') || tab.url.startsWith('file'))) {
@@ -33,6 +41,25 @@
     }
   }
 
-  document.getElementById('copy-html').addEventListener('click', () => activate('html'));
-  document.getElementById('copy-text').addEventListener('click', () => activate('text'));
+  copyHtmlRadio.addEventListener('change', () => {
+    if (copyHtmlRadio.checked) activate('html');
+  });
+
+  copyTextRadio.addEventListener('change', () => {
+    if (copyTextRadio.checked) activate('text');
+  });
+
+  // Clicking the already-selected option activates with that mode
+  copyHtmlRadio.closest('label').addEventListener('click', (e) => {
+    if (copyHtmlRadio.checked) {
+      e.preventDefault();
+      activate('html');
+    }
+  });
+  copyTextRadio.closest('label').addEventListener('click', (e) => {
+    if (copyTextRadio.checked) {
+      e.preventDefault();
+      activate('text');
+    }
+  });
 })();

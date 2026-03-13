@@ -8,9 +8,15 @@
 <body>
   <div class="panel">
     <p class="label">Copy selection as:</p>
-    <div class="buttons">
-      <button id="copy-html" type="button">Copy HTML</button>
-      <button id="copy-text" type="button">Copy Text</button>
+    <div class="mode-radios">
+      <label class="radio-label">
+        <input type="radio" name="copy-mode" id="copy-html" value="html" />
+        HTML
+      </label>
+      <label class="radio-label">
+        <input type="radio" name="copy-mode" id="copy-text" value="text" />
+        Text
+      </label>
     </div>
     <label class="checkbox-label">
       <input type="checkbox" id="fix-single-char-equations" />

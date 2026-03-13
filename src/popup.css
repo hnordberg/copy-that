@@ -14,47 +14,25 @@ body {
   color: #333;
 }
 
-.buttons {
+.mode-radios {
   display: flex;
   flex-direction: column;
+  gap: 6px;
+}
+
+.mode-radios .radio-label {
+  margin: 0;
+  display: flex;
+  align-items: center;
   gap: 8px;
-}
-
-.buttons button {
-  padding: 8px 14px;
   font-size: 13px;
+  color: #333;
   cursor: pointer;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  background: #f8f8f8;
-  color: #222;
 }
 
-.buttons button:hover {
-  background: #eee;
-  border-color: #999;
-}
-
-.buttons button:active {
-  background: #e0e0e0;
-}
-
-.buttons button#copy-html {
-  background: #e8f4fc;
-  border-color: #6ab0e8;
-}
-
-.buttons button#copy-html:hover {
-  background: #d0eaf8;
-}
-
-.buttons button#copy-text {
-  background: #f5f5f5;
-  border-color: #bbb;
-}
-
-.buttons button#copy-text:hover {
-  background: #ebebeb;
+.mode-radios .radio-label input {
+  margin: 0;
+  flex-shrink: 0;
 }
 
 .checkbox-label {
