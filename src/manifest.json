@@ -12,7 +12,7 @@
     },
     "name": "Copy That",
     "version": "2.1.0",
-    "description": "Click an element on the page to copy it to the clipboard. Math can be copied as Office Math Objects (OMML), LaTeX, MathML, or Unicode.",
+    "description": "Click an element on a page to copy it to the clipboard. Math can be copied as Office Math Objects (OMML), LaTeX, MathML, or Unicode.",
     "permissions": [
         "activeTab",
         "scripting",
