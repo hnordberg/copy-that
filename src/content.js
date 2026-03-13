@@ -85,8 +85,7 @@
     }
 
     function htmlFragmentToText(html) {
-      const doc = new DOMParser().parseFromString('<!doctype html><html><body></body></html>', 'text/html');
-      doc.body.innerHTML = html || '';
+      const doc = new DOMParser().parseFromString(html || '', 'text/html');
       return doc.body.textContent || '';
     }
 
