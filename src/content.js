@@ -18,7 +18,7 @@
       mathMode: 'omml'
     });
     const copyMode = stored === 'html' ? 'html' : 'text';
-    const mathMode = ['omml', 'latex', 'mathml'].includes(storedMathMode)
+    const mathMode = ['omml', 'latex', 'mathml', 'unicode'].includes(storedMathMode)
       ? storedMathMode
       : 'omml';
     const usePlainCharForSingleEquation = !!fixSingleCharEquations;
@@ -56,6 +56,32 @@
         xml = xml.replace('<math', '<math xmlns="http://www.w3.org/1998/Math/MathML"');
       }
       return stripInvisible(xml);
+    }
+
+    function latexToUnicode(tex) {
+      if (!tex) return '';
+      let out = stripDisplayStyle(tex);
+      const cmdMap = {
+        alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ε',
+        zeta: 'ζ', eta: 'η', theta: 'θ', iota: 'ι', kappa: 'κ',
+        lambda: 'λ', mu: 'μ', nu: 'ν', xi: 'ξ', pi: 'π', rho: 'ρ',
+        sigma: 'σ', tau: 'τ', upsilon: 'υ', phi: 'φ', chi: 'χ',
+        psi: 'ψ', omega: 'ω', Gamma: 'Γ', Delta: 'Δ', Theta: 'Θ',
+        Lambda: 'Λ', Xi: 'Ξ', Pi: 'Π', Sigma: 'Σ', Upsilon: 'Υ',
+        Phi: 'Φ', Psi: 'Ψ', Omega: 'Ω',
+        cdot: '·', times: '×', div: '÷', pm: '±', mp: '∓',
+        leq: '≤', geq: '≥', neq: '≠', approx: '≈', equiv: '≡',
+        infty: '∞', partial: '∂', nabla: '∇', sum: '∑', prod: '∏',
+        int: '∫', iint: '∬', iiint: '∭', oint: '∮', to: '→',
+        leftarrow: '←', rightarrow: '→', Leftarrow: '⇐', Rightarrow: '⇒',
+        Leftrightarrow: '⇔', ldots: '…', cdots: '⋯', vdots: '⋮', ddots: '⋱',
+      };
+      out = out.replace(/\\([a-zA-Z]+)/g, (_, c) => cmdMap[c] || c);
+      out = out.replace(/\\([{}[\]()])/g, '$1');
+      out = out.replace(/\\,/g, ' ').replace(/\\;/g, ' ').replace(/\\!/g, '').replace(/\\:/g, ' ');
+      out = out.replace(/[{}]/g, '');
+      out = out.replace(/\s+/g, ' ').trim();
+      return out;
     }
 
     function htmlFragmentToText(html) {
@@ -124,8 +150,9 @@
       if (isHtmlMode) {
         const useLatexMath = mathMode === 'latex';
         const useMathMlMath = mathMode === 'mathml';
-        const usePlainMath = useLatexMath || useMathMlMath;
-        const plainModeName = useLatexMath ? 'LaTeX' : 'MathML';
+        const useUnicodeMath = mathMode === 'unicode';
+        const usePlainMath = useLatexMath || useMathMlMath || useUnicodeMath;
+        const plainModeName = useLatexMath ? 'LaTeX' : (useMathMlMath ? 'MathML' : 'Unicode');
         let textFallback = targetElement.innerText;
         // Use outerHTML when root has data-math so the parsed fragment contains
         // that element and findMathElements can find it (KaTeX HTML-only mode).
@@ -141,9 +168,14 @@
               ? escXml(wrapLatex(tex, true))
               : useMathMlMath
                 ? escXml(tex)
+                : useUnicodeMath
+                  ? escXml(latexToUnicode(tex))
                 : equationOrPlainChar(latexToOMML(tex, true), tex);
             htmlToCopy = usePlainMath ? '' : buildMsOfficeHtml(stripInvisible(eq));
-            textFallback = useLatexMath ? wrapLatex(tex, true) : tex;
+            textFallback = useLatexMath ? wrapLatex(tex, true)
+              : useMathMlMath ? tex
+              : useUnicodeMath ? latexToUnicode(tex)
+              : tex;
             mathHandled = true;
             console.log(
               usePlainMath
@@ -162,17 +194,23 @@
           try {
             const latex = mathMLtoLaTeX(targetElement);
             const mathml = mathMLAsText(targetElement);
-            const text = latex || mathText(targetElement);
+            const unicode = mathText(targetElement);
+            const text = latex || unicode;
             const isBlock = targetElement.getAttribute('display') === 'block';
             const eq = useLatexMath
               ? escXml(wrapLatex(latex, isBlock))
               : useMathMlMath
                 ? escXml(mathml)
+                : useUnicodeMath
+                  ? escXml(unicode)
                 : equationOrPlainChar(mathMLtoOMML(targetElement), text);
             htmlToCopy = usePlainMath ? '' : buildMsOfficeHtml(
               stripInvisible(isBlock ? `<br>${eq}<br>` : ` ${eq} `)
             );
-            textFallback = useLatexMath ? wrapLatex(latex, isBlock) : useMathMlMath ? mathml : text;
+            textFallback = useLatexMath ? wrapLatex(latex, isBlock)
+              : useMathMlMath ? mathml
+              : useUnicodeMath ? unicode
+              : text;
             mathHandled = true;
             console.log(
               usePlainMath
@@ -200,11 +238,14 @@
                 (item.mathml && item.mathml.getAttribute('display') === 'block');
               const latex = item.mathml ? mathMLtoLaTeX(item.mathml) : stripDisplayStyle(item.latex || '');
               const mathml = item.mathml ? mathMLAsText(item.mathml) : '';
+              const unicode = item.mathml ? mathText(item.mathml) : latexToUnicode(item.latex || '');
               const text = latex || (item.mathml ? mathText(item.mathml) : (item.latex || ''));
               const plainMath = useLatexMath
                 ? wrapLatex(latex, !!isBlock)
                 : useMathMlMath
                   ? (mathml || (item.latex || ''))
+                  : useUnicodeMath
+                    ? unicode
                   : '';
               const html = usePlainMath
                 ? escXml(plainMath)

@@ -145,6 +145,19 @@ describe('content clipboard output modes', () => {
     assert.match(clip['text/plain'], /<\/math>/);
   });
 
+  it('Unicode mode writes only text/plain', async () => {
+    const h = createHarness('<img id="m" alt="\\alpha + \\beta = \\gamma" />');
+    h.storageState.mathMode = 'unicode';
+    await h.injectContent();
+
+    h.click('#m');
+    const clip = h.getClipboardData();
+
+    assert.equal(typeof clip['text/plain'], 'string');
+    assert.equal(clip['text/html'], undefined);
+    assert.match(clip['text/plain'], /α \+ β = γ/);
+  });
+
   it('LaTeX text output never leaks math placeholders', async () => {
     const h = createHarness(
       '<div id="box"><math><mi>x</mi></math><span>+</span><math><mi>y</mi></math></div>'
@@ -174,6 +187,22 @@ describe('content clipboard output modes', () => {
     assert.equal(typeof clip['text/plain'], 'string');
     assert.doesNotMatch(clip['text/plain'], /___MATH_PH_\d+___/);
     assert.match(clip['text/plain'], /<math[^>]*>/);
+  });
+
+  it('Unicode text output never leaks math placeholders', async () => {
+    const h = createHarness(
+      '<div id="box"><math><mi>α</mi></math><span>+</span><math><mi>β</mi></math></div>'
+    );
+    h.storageState.mathMode = 'unicode';
+    await h.injectContent();
+
+    h.click('#box');
+    const clip = h.getClipboardData();
+
+    assert.equal(typeof clip['text/plain'], 'string');
+    assert.doesNotMatch(clip['text/plain'], /___MATH_PH_\d+___/);
+    assert.match(clip['text/plain'], /α/);
+    assert.match(clip['text/plain'], /β/);
   });
 
   it('re-injection while active applies updated math mode', async () => {
