@@ -9,6 +9,10 @@ const mathCode = fs.readFileSync(
   path.join(__dirname, '..', 'src', 'mathml-to-omml.js'),
   'utf-8'
 );
+const codeFormattingCode = fs.readFileSync(
+  path.join(__dirname, '..', 'src', 'code-formatting.js'),
+  'utf-8'
+);
 const contentCode = fs.readFileSync(
   path.join(__dirname, '..', 'src', 'content.js'),
   'utf-8'
@@ -79,6 +83,7 @@ function createHarness(initialHtml = '') {
 
   const context = vm.createContext(window);
   vm.runInContext(mathCode, context);
+  vm.runInContext(codeFormattingCode, context);
 
   async function injectContent() {
     vm.runInContext(contentCode, context);
@@ -220,5 +225,109 @@ describe('content clipboard output modes', () => {
 
     assert.equal(typeof clip['text/plain'], 'string');
     assert.equal(clip['text/html'], undefined);
+  });
+});
+
+// ── Code block formatting ─────────────────────────────────────────
+
+describe('code block formatting', () => {
+  it('OMML mode inlines styles on <code> elements', async () => {
+    const h = createHarness(
+      '<pre id="block"><code><span class="kw">if</span> x</code></pre>'
+    );
+    h.storageState.mathMode = 'omml';
+    await h.injectContent();
+
+    h.click('#block');
+    const clip = h.getClipboardData();
+
+    assert.ok(clip['text/html'], 'should have HTML on clipboard');
+    assert.match(clip['text/html'], /<code[^>]*style="[^"]*font-family/,
+      'code element should have inlined font-family');
+  });
+
+  it('OMML mode inlines color on syntax-highlight spans', async () => {
+    const h = createHarness(
+      '<pre id="block"><code><span class="kw">if</span> x</code></pre>'
+    );
+    h.storageState.mathMode = 'omml';
+    await h.injectContent();
+
+    h.click('#block');
+    const clip = h.getClipboardData();
+
+    assert.match(clip['text/html'], /<span[^>]*style="[^"]*color/,
+      'child spans should have inlined color');
+  });
+
+  it('LaTeX mode converts <code> to \\texttt in code blocks', async () => {
+    const h = createHarness(
+      '<pre id="block"><code>x = 1</code></pre>'
+    );
+    h.storageState.mathMode = 'latex';
+    await h.injectContent();
+
+    h.click('#block');
+    const clip = h.getClipboardData();
+
+    assert.equal(clip['text/html'], undefined, 'no HTML in LaTeX mode');
+    assert.match(clip['text/plain'], /\\texttt\{/);
+    assert.match(clip['text/plain'], /x = 1/);
+  });
+
+  it('LaTeX mode converts inline <code> to \\texttt', async () => {
+    const h = createHarness(
+      '<div id="block">Use <code>foo()</code> here</div>'
+    );
+    h.storageState.mathMode = 'latex';
+    await h.injectContent();
+
+    h.click('#block');
+    const clip = h.getClipboardData();
+
+    assert.match(clip['text/plain'], /\\texttt\{foo\(\)\}/);
+  });
+
+  it('clicking inside a code block walks up to <pre>', async () => {
+    const h = createHarness(
+      '<pre><code><span id="inner" class="kw">if</span> x</code></pre>'
+    );
+    h.storageState.mathMode = 'omml';
+    await h.injectContent();
+
+    h.click('#inner');
+    const clip = h.getClipboardData();
+
+    assert.ok(clip['text/html'], 'should copy HTML');
+    assert.match(clip['text/html'], /<code/,
+      'should include the <code> tag from walking up');
+  });
+
+  it('MathML mode does not apply LaTeX formatting to code blocks', async () => {
+    const h = createHarness(
+      '<div id="block"><code>hello</code></div>'
+    );
+    h.storageState.mathMode = 'mathml';
+    await h.injectContent();
+
+    h.click('#block');
+    const clip = h.getClipboardData();
+
+    // MathML is a plain-text mode; code blocks get no special treatment
+    assert.equal(clip['text/html'], undefined, 'no HTML in MathML mode');
+  });
+
+  it('Unicode mode does not apply LaTeX formatting to code blocks', async () => {
+    const h = createHarness(
+      '<div id="block"><code>hello</code></div>'
+    );
+    h.storageState.mathMode = 'unicode';
+    await h.injectContent();
+
+    h.click('#block');
+    const clip = h.getClipboardData();
+
+    // Unicode is a plain-text mode; code blocks get no special treatment
+    assert.equal(clip['text/html'], undefined, 'no HTML in Unicode mode');
   });
 });
