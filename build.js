@@ -30,6 +30,7 @@ const outputPath = path.join(process.cwd(), outputName);
 const coreFiles = [
   'manifest.json',
   'background.js',
+  'code-formatting.js',
   'content.js',
   'mathml-to-omml.js',
   'popup.html',
