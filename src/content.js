@@ -31,6 +31,7 @@
   
     const { escXml, mathMLtoOMML, mathMLtoLaTeX, latexToOMML, findMathElements, buildMsOfficeHtml,
             stripInvisible, mathText, stripDisplayStyle } = window.CopyThatMath;
+    const { inlineCodeStyles, convertCodeToLatex } = window.CopyThatCode;
 
     function wrapEquation(omml, fallbackText) {
       return `<!--[if gte msEquation 12]>${omml}<![endif]-->` +
@@ -123,6 +124,18 @@
       const mathAncestor = targetElement.closest(
         'mjx-container, .katex, math, .mwe-math-element');
       if (mathAncestor) targetElement = mathAncestor;
+      // If clicked inside a <code>/<pre> block, walk up so the tag (and its
+      // styling context) is included when we read innerHTML later.
+      // Prefer <pre> (the outermost block) over <code> (often nested inside).
+      if (isHtmlMode && !mathAncestor) {
+        const preAncestor = targetElement.closest('pre');
+        if (preAncestor) {
+          targetElement = preAncestor;
+        } else {
+          const codeAncestor = targetElement.closest('code');
+          if (codeAncestor) targetElement = codeAncestor;
+        }
+      }
       // KaTeX HTML-only (no .katex-mathml) keeps LaTeX in a [data-math] ancestor.
       // Use that element as the copy root so findMathElements sees the attribute.
       if (isHtmlMode && targetElement.closest) {
@@ -255,6 +268,16 @@
               reps.push({ ph, html, display: !!isBlock });
               item.element.parentNode.replaceChild(document.createTextNode(ph), item.element);
             });
+            // Inline styles on <code>/<pre> for OMML, or convert to LaTeX
+            if (tc.querySelector('code, pre')) {
+              if (!usePlainMath) {
+                console.log('Code block detected, inlining computed styles.');
+                inlineCodeStyles(targetElement, tc);
+              } else if (useLatexMath) {
+                console.log('Code block detected, converting to LaTeX formatting.');
+                convertCodeToLatex(tc);
+              }
+            }
             let body = tc.innerHTML;
             for (const { ph, html, display } of reps) {
               body = body.split(ph).join(display ? `<br>${html}<br>` : ` ${html} `);
@@ -279,6 +302,22 @@
             e
           );
           htmlToCopy = copyRootHtml;
+        }
+
+        // Apply code formatting when no math was detected
+        if (!mathHandled && htmlToCopy) {
+          const codeDoc = new DOMParser().parseFromString(htmlToCopy, 'text/html').body;
+          if (codeDoc.querySelector('code, pre')) {
+            if (!usePlainMath) {
+              console.log('Code block detected, inlining computed styles.');
+              inlineCodeStyles(targetElement, codeDoc);
+              htmlToCopy = buildMsOfficeHtml(stripInvisible(codeDoc.innerHTML));
+            } else if (useLatexMath) {
+              console.log('Code block detected, converting to LaTeX formatting.');
+              convertCodeToLatex(codeDoc);
+              textFallback = codeDoc.textContent || textFallback;
+            }
+          }
         }
 
         if (htmlToCopy || usePlainMath) {

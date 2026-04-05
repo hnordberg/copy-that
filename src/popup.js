@@ -51,7 +51,7 @@
       try {
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          files: ['mathml-to-omml.js', 'content.js']
+          files: ['mathml-to-omml.js', 'code-formatting.js', 'content.js']
         });
         window.close();
       } catch (err) {
