@@ -8,6 +8,10 @@ A Firefox / Chrome extension that allows you to copy text or HTML from any eleme
 - **Plain Text Copy**: Choose "Copy Text" in the popup, then click an element to copy its `innerText` (plain text content)
 - **HTML Copy**: Choose "Copy HTML" in the popup, then click an element to copy its `innerHTML` as rich HTML (with plain text fallback)
 - **Math Output Modes**: Math equations (MathML, KaTeX, MathJax, Wikipedia) can be copied as MS Office Math Objects (OMML), LaTeX plain text, MathML plain text, or Unicode plain text.
+- **Code Block Formatting**: When copying in HTML mode, `<code>` and `<pre>` elements preserve their formatting:
+  - **OMML mode**: Computed styles (font, color, syntax highlighting) are inlined so code blocks paste with formatting into Word, OneNote, etc.
+  - **LaTeX mode**: Code blocks are converted to `\texttt{}` (inline) or `\begin{verbatim}...\end{verbatim}` (block) in the plain text output.
+  - Clicking anywhere inside a code block automatically walks up to the containing `<pre>` or `<code>` element, similar to how clicking inside an equation selects the full equation.
 - **Visual Feedback**: 
   - Outline on hover while selecting an element
   - Dialog to choose **HTML** or **Text** before copying
@@ -43,6 +47,7 @@ A Firefox / Chrome extension that allows you to copy text or HTML from any eleme
 - **Content Script**: Injected when the user chooses "Copy HTML" or "Copy Text" in the popup
 - **Background Script**: Handles extension icon and popup; script injection is triggered from the popup
 - **Clipboard API**: Uses `clipboardData.setData` for HTML copy (to preserve OMML markup) and `navigator.clipboard` for plain text
+- **Code formatting**: `code-formatting.js` inlines computed styles from the source page onto `<code>`/`<pre>` elements and their children (e.g. syntax-highlighted spans) so formatting survives the clipboard. In LaTeX mode, code blocks are converted to LaTeX formatting commands instead.
 - **Math detection**: Detects MathML from KaTeX (`.katex-mathml`), MathJax v3 (`mjx-container`), native `<math>` elements, and Wikipedia math images (`img.mwe-math-fallback-image-*`)
 - **Office Math mode**: Converts detected math to Office Math Markup Language wrapped in `<!--[if gte msEquation 12]>` conditional comments
 - **LaTeX mode**: Converts detected math to LaTeX (or reuses source LaTeX when available) and writes `text/plain` clipboard data
